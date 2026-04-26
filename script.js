@@ -2554,9 +2554,16 @@ db.ref("messages").limitToLast(60).on("child_added", snap => {
   }
 
   // ── Snake Game ──
-  function initSnake() {
-    const canvas   = document.getElementById('snake-canvas');
-    const ctx      = canvas.getContext('2d');
+function initSnake() {
+  const canvas   = document.getElementById('snake-canvas');
+  const ctx      = canvas.getContext('2d');
+
+  // Responsive canvas size
+  const isMobile = window.innerWidth <= 768;
+  const size     = isMobile ? 240 : 300;
+  canvas.width   = size;
+  canvas.height  = size;
+
     const scoreEl  = document.getElementById('snake-score');
     const bestEl   = document.getElementById('snake-best');
     const startBtn = document.getElementById('snake-start-btn');
