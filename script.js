@@ -1263,6 +1263,22 @@ document.addEventListener("DOMContentLoaded", () => {
           🟢 SITE IS UP
         </button>
       </div>
+      // Add this inside buildBanAdminPanel(), before the closing </div> of panel.innerHTML
+// Insert after the site-status section:
+      <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
+        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:5px;">Global Announcement</label>
+        <textarea id="admin-announce-input" placeholder="Type announcement…" maxlength="200" rows="3" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #2A2638;background:#0D0B12;color:#F0E6CA;font-family:'EB Garamond',serif;font-size:14px;outline:none;margin-bottom:8px;display:block;box-sizing:border-box;resize:none;"></textarea>
+        <button id="admin-announce-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#FFD700,#D4A017);border:none;border-radius:8px;color:#07060A;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:14px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+          Send Announcement
+        </button>
+        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:5px;">Play Event</label>
+        <textarea id="admin-event-input" placeholder="Describe event…" maxlength="200" rows="3" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #2A2638;background:#0D0B12;color:#F0E6CA;font-family:'EB Garamond',serif;font-size:14px;outline:none;margin-bottom:8px;display:block;box-sizing:border-box;resize:none;"></textarea>
+        <button id="admin-event-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#FF6B35,#E05A20);border:none;border-radius:8px;color:#fff;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+          Play Event
+        </button>
+      </div>
       <div id="ban-feedback" style="margin-top:12px;font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;min-height:20px;"></div>
     `;
     document.body.appendChild(panel);
@@ -1322,6 +1338,33 @@ document.addEventListener("DOMContentLoaded", () => {
       await db.ref("siteStatus").set({ isDown: !isDown, updatedBy: me(), updatedAt: Date.now() });
     };
   }
+  document.getElementById("admin-announce-btn").onclick = async () => {
+  const text = document.getElementById("admin-announce-input").value.trim();
+  if (!text) { showBanFeedback("❌ Enter a message", "#ff6b6b"); return; }
+  await db.ref("admin_broadcasts").push({
+    type: "announcement",
+    text,
+    sentBy: me(),
+    avatar: myAvatar(),
+    sentAt: Date.now(),
+  });
+  document.getElementById("admin-announce-input").value = "";
+  showBanFeedback("✓ Announcement sent", "#2ecc71");
+};
+
+document.getElementById("admin-event-btn").onclick = async () => {
+  const text = document.getElementById("admin-event-input").value.trim();
+  if (!text) { showBanFeedback("❌ Enter event details", "#ff6b6b"); return; }
+  await db.ref("admin_broadcasts").push({
+    type: "event",
+    text,
+    sentBy: me(),
+    avatar: myAvatar(),
+    sentAt: Date.now(),
+  });
+  document.getElementById("admin-event-input").value = "";
+  showBanFeedback("✓ Event played", "#2ecc71");
+};
 }); // end DOMContentLoaded
 
 // =====================================
@@ -2467,3 +2510,112 @@ document.addEventListener('DOMContentLoaded', () => {
     } else { index = 0; clearTimeout(timer); }
   });
 });
+// =====================================
+// ADMIN BROADCASTS — toast stack
+// =====================================
+(function initAdminBroadcasts() {
+  const stack = document.createElement("div");
+  stack.id = "broadcast-stack";
+  stack.style.cssText = `
+    position:fixed;top:70px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+    z-index:99998;pointer-events:none;width:min(520px,92vw);
+  `;
+  document.body.appendChild(stack);
+
+  const ICONS = {
+    announcement: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>`,
+    event: `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>`,
+  };
+  const LABELS = { announcement: "ANNOUNCEMENT", event: "EVENT" };
+  const COLORS = {
+    announcement: { bg: "linear-gradient(135deg,#141219,#0D0B12)", border: "rgba(255,215,0,0.6)", accent: "#FFD700", label: "#B8960C" },
+    event:        { bg: "linear-gradient(135deg,#1a1010,#120D0D)",  border: "rgba(255,107,53,0.6)",  accent: "#FF6B35",  label: "#C0502A" },
+  };
+
+  const seen = new Set();
+
+  db.ref("admin_broadcasts").limitToLast(1).on("child_added", snap => {
+    if (seen.has(snap.key)) return;
+    seen.add(snap.key);
+    const data = snap.val();
+    if (!data || !data.text) return;
+
+    const c = COLORS[data.type] || COLORS.announcement;
+    const toast = document.createElement("div");
+    toast.style.cssText = `
+      pointer-events:auto;
+      background:${c.bg};
+      border:1px solid ${c.border};
+      border-radius:16px;
+      padding:14px 18px 14px 16px;
+      box-shadow:0 8px 40px rgba(0,0,0,0.75);
+      display:flex;align-items:flex-start;gap:12px;
+      width:100%;box-sizing:border-box;
+      opacity:0;transform:translateY(-12px) scale(0.95);
+      transition:opacity 0.3s cubic-bezier(0.4,0,0.2,1),transform 0.3s cubic-bezier(0.4,0,0.2,1);
+    `;
+
+    // Avatar
+    const av = document.createElement("div");
+    av.style.cssText = `width:36px;height:36px;border-radius:50%;flex-shrink:0;overflow:hidden;border:1px solid ${c.border};display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:13px;font-weight:700;color:${c.accent};background:rgba(255,255,255,0.05);`;
+    if (data.avatar) {
+      const img = document.createElement("img");
+      img.src = data.avatar; img.style.cssText = "width:100%;height:100%;object-fit:cover;";
+      img.onerror = () => { av.innerHTML = ""; av.textContent = (data.sentBy||"A").charAt(0).toUpperCase(); };
+      av.appendChild(img);
+    } else {
+      av.textContent = (data.sentBy||"A").charAt(0).toUpperCase();
+    }
+
+    // Body
+    const body = document.createElement("div");
+    body.style.cssText = "flex:1;min-width:0;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "display:flex;align-items:center;gap:7px;margin-bottom:5px;";
+
+    const labelPill = document.createElement("span");
+    labelPill.style.cssText = `font-family:'Cinzel',serif;font-size:9px;letter-spacing:2.5px;font-weight:700;color:${c.accent};background:rgba(255,255,255,0.05);border:1px solid ${c.border};border-radius:20px;padding:2px 9px;display:flex;align-items:center;gap:5px;`;
+    labelPill.innerHTML = ICONS[data.type] + (LABELS[data.type] || "MESSAGE");
+
+    const sender = document.createElement("span");
+    sender.style.cssText = `font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;color:${c.label};`;
+    sender.textContent = data.sentBy || "Admin";
+
+    header.appendChild(labelPill);
+    header.appendChild(sender);
+
+    const msg = document.createElement("div");
+    msg.style.cssText = "font-family:'EB Garamond',serif;font-size:15px;line-height:1.5;color:#F0E6CA;word-break:break-word;";
+    msg.textContent = data.text;
+
+    body.appendChild(header);
+    body.appendChild(msg);
+
+    // Close
+    const closeBtn = document.createElement("button");
+    closeBtn.style.cssText = `width:22px;height:22px;border-radius:50%;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(240,230,202,0.4);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;pointer-events:auto;`;
+    closeBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+    toast.appendChild(av);
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
+    stack.appendChild(toast);
+
+    // Animate in
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translateY(0) scale(1)";
+    });
+
+    function dismiss() {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-8px) scale(0.95)";
+      setTimeout(() => toast.remove(), 300);
+    }
+
+    closeBtn.onclick = dismiss;
+    setTimeout(dismiss, 8000);
+  });
+})();
