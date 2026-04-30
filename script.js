@@ -381,8 +381,10 @@ function showVerificationGate(featureName) {
 // =====================================
 const adminUsers   = ["R2FtZU1ha2Vy", "GDFlame05", "BabyFounder"];
 const banAdminUser = "BabyFounder";
-const banAdminUsers = new Set(["BabyFounder", "GDGamer05"]);
-const chatAdmins  = new Set(["BabyFounder", "GDGamer05"]);
+// FIX: Added "Kaizer" to banAdminUsers
+const banAdminUsers = new Set(["BabyFounder", "GDGamer05", "Kaizer"]);
+// FIX: Added "Kaizer" to chatAdmins
+const chatAdmins  = new Set(["BabyFounder", "GDGamer05", "Kaizer"]);
 const nsfwExempt  = new Set(["BabyFounder", "Number1"]);
 
 // =====================================
@@ -1110,7 +1112,7 @@ document.addEventListener("DOMContentLoaded", () => {
     adminPanel.style.display = isAdmin ? "block" : "none";
 
     if (isBanAdmin || banAdminUsers.has(username)) {
-      buildBanAdminPanel();
+      buildBanAdminPanel(username);
       let banToggleBtn = document.getElementById("ban-manager-toggle-btn");
       if (!banToggleBtn) {
         banToggleBtn = document.createElement("button");
@@ -1215,10 +1217,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // =====================================
   // BAN ADMIN PANEL
+  // FIX: accepts `username` param so site-status can be gated to BabyFounder only.
+  // FIX: announce/event button handlers are now INSIDE this function (were orphaned outside).
   // =====================================
-  function buildBanAdminPanel() {
+  function buildBanAdminPanel(username) {
     const existing = document.getElementById("ban-admin-panel");
     if (existing) { existing.style.display = "block"; return; }
+
+    // Only BabyFounder sees the site status section
+    const isFounder = username === "BabyFounder";
+
+    const siteStatusHTML = isFounder ? `
+      <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
+        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:8px;">Site Status</label>
+        <button id="site-status-toggle-btn" style="width:100%;padding:11px;border-radius:8px;border:1px solid rgba(46,204,113,0.5);background:rgba(46,204,113,0.1);color:#2ecc71;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+          🟢 SITE IS UP
+        </button>
+      </div>
+    ` : "";
 
     const panel = document.createElement("div");
     panel.id = "ban-admin-panel";
@@ -1257,12 +1273,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <button id="unban-submit-btn" style="padding:8px 14px;border-radius:8px;border:1px solid rgba(46,204,113,0.5);background:rgba(46,204,113,0.1);color:#2ecc71;font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">Unban</button>
         </div>
       </div>
-      <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
-        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:8px;">Site Status</label>
-        <button id="site-status-toggle-btn" style="width:100%;padding:11px;border-radius:8px;border:1px solid rgba(46,204,113,0.5);background:rgba(46,204,113,0.1);color:#2ecc71;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
-          🟢 SITE IS UP
-        </button>
-      </div>
+      ${siteStatusHTML}
       <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
         <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:5px;">Global Announcement</label>
         <textarea id="admin-announce-input" placeholder="Type announcement…" maxlength="200" rows="3" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #2A2638;background:#0D0B12;color:#F0E6CA;font-family:'EB Garamond',serif;font-size:14px;outline:none;margin-bottom:8px;display:block;box-sizing:border-box;resize:none;"></textarea>
@@ -1314,55 +1325,62 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("unban-username-input").value = "";
     };
 
-    const statusBtn = document.getElementById("site-status-toggle-btn");
-    function updateStatusBtn(isDown) {
-      if (isDown) {
-        statusBtn.textContent = "🔴 SITE IS DOWN — Click to bring UP";
-        statusBtn.style.borderColor = "rgba(255,107,107,0.5)";
-        statusBtn.style.background  = "rgba(255,107,107,0.1)";
-        statusBtn.style.color       = "#ff6b6b";
-      } else {
-        statusBtn.textContent = "🟢 SITE IS UP — Click to mark DOWN";
-        statusBtn.style.borderColor = "rgba(46,204,113,0.5)";
-        statusBtn.style.background  = "rgba(46,204,113,0.1)";
-        statusBtn.style.color       = "#2ecc71";
+    // FIX: Site status only wired up for BabyFounder
+    if (isFounder) {
+      const statusBtn = document.getElementById("site-status-toggle-btn");
+      function updateStatusBtn(isDown) {
+        if (isDown) {
+          statusBtn.textContent = "🔴 SITE IS DOWN — Click to bring UP";
+          statusBtn.style.borderColor = "rgba(255,107,107,0.5)";
+          statusBtn.style.background  = "rgba(255,107,107,0.1)";
+          statusBtn.style.color       = "#ff6b6b";
+        } else {
+          statusBtn.textContent = "🟢 SITE IS UP — Click to mark DOWN";
+          statusBtn.style.borderColor = "rgba(46,204,113,0.5)";
+          statusBtn.style.background  = "rgba(46,204,113,0.1)";
+          statusBtn.style.color       = "#2ecc71";
+        }
       }
+      db.ref("siteStatus/isDown").once("value").then(snap => { updateStatusBtn(snap.val() === true); });
+      db.ref("siteStatus/isDown").on("value", snap => { updateStatusBtn(snap.val() === true); });
+      statusBtn.onclick = async () => {
+        const snap   = await db.ref("siteStatus/isDown").once("value");
+        const isDown = snap.val() === true;
+        await db.ref("siteStatus").set({ isDown: !isDown, updatedBy: me(), updatedAt: Date.now() });
+      };
     }
-    db.ref("siteStatus/isDown").once("value").then(snap => { updateStatusBtn(snap.val() === true); });
-    db.ref("siteStatus/isDown").on("value", snap => { updateStatusBtn(snap.val() === true); });
-    statusBtn.onclick = async () => {
-      const snap   = await db.ref("siteStatus/isDown").once("value");
-      const isDown = snap.val() === true;
-      await db.ref("siteStatus").set({ isDown: !isDown, updatedBy: me(), updatedAt: Date.now() });
+
+    // FIX: Announce button handler now correctly inside buildBanAdminPanel
+    document.getElementById("admin-announce-btn").onclick = async () => {
+      const text = document.getElementById("admin-announce-input").value.trim();
+      if (!text) { showBanFeedback("❌ Enter a message", "#ff6b6b"); return; }
+      await db.ref("admin_broadcasts").push({
+        type: "announcement",
+        text,
+        sentBy: me(),
+        avatar: myAvatar(),
+        sentAt: Date.now(),
+      });
+      document.getElementById("admin-announce-input").value = "";
+      showBanFeedback("✓ Announcement sent", "#2ecc71");
+    };
+
+    // FIX: Event button handler now correctly inside buildBanAdminPanel
+    document.getElementById("admin-event-btn").onclick = async () => {
+      const text = document.getElementById("admin-event-input").value.trim();
+      if (!text) { showBanFeedback("❌ Enter event details", "#ff6b6b"); return; }
+      await db.ref("admin_broadcasts").push({
+        type: "event",
+        text,
+        sentBy: me(),
+        avatar: myAvatar(),
+        sentAt: Date.now(),
+      });
+      document.getElementById("admin-event-input").value = "";
+      showBanFeedback("✓ Event played", "#2ecc71");
     };
   }
-  document.getElementById("admin-announce-btn").onclick = async () => {
-  const text = document.getElementById("admin-announce-input").value.trim();
-  if (!text) { showBanFeedback("❌ Enter a message", "#ff6b6b"); return; }
-  await db.ref("admin_broadcasts").push({
-    type: "announcement",
-    text,
-    sentBy: me(),
-    avatar: myAvatar(),
-    sentAt: Date.now(),
-  });
-  document.getElementById("admin-announce-input").value = "";
-  showBanFeedback("✓ Announcement sent", "#2ecc71");
-};
 
-document.getElementById("admin-event-btn").onclick = async () => {
-  const text = document.getElementById("admin-event-input").value.trim();
-  if (!text) { showBanFeedback("❌ Enter event details", "#ff6b6b"); return; }
-  await db.ref("admin_broadcasts").push({
-    type: "event",
-    text,
-    sentBy: me(),
-    avatar: myAvatar(),
-    sentAt: Date.now(),
-  });
-  document.getElementById("admin-event-input").value = "";
-  showBanFeedback("✓ Event played", "#2ecc71");
-};
 }); // end DOMContentLoaded
 
 // =====================================
@@ -1540,7 +1558,6 @@ document.getElementById("admin-event-btn").onclick = async () => {
       picker.appendChild(btn);
     });
 
-    // Position relative to anchor
     document.body.appendChild(picker);
     const aRect = anchorEl.getBoundingClientRect();
     const pRect = picker.getBoundingClientRect();
@@ -1640,10 +1657,8 @@ document.getElementById("admin-event-btn").onclick = async () => {
     const bubble = document.createElement("div");
     bubble.className = "chat-bubble";
 
-    // Content
     bubble.appendChild(buildMessageContent(data.text));
 
-    // Edited tag
     if (data.edited) {
       const etag = document.createElement("span");
       etag.className = "chat-edited-tag";
@@ -1655,14 +1670,12 @@ document.getElementById("admin-event-btn").onclick = async () => {
     const toolbar = document.createElement("div");
     toolbar.className = isMe ? "chat-toolbar toolbar-left" : "chat-toolbar toolbar-right";
 
-    // Emoji react btn
     const emojiBtn = document.createElement("button");
     emojiBtn.className = "ctb-btn";
     emojiBtn.title = "React";
     emojiBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 13s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`;
     emojiBtn.onclick = (e) => { e.stopPropagation(); showReactionPicker(msgKey, emojiBtn); };
 
-    // Reply btn
     const replyBtn = document.createElement("button");
     replyBtn.className = "ctb-btn";
     replyBtn.title = "Reply";
@@ -1710,13 +1723,11 @@ document.getElementById("admin-event-btn").onclick = async () => {
     bubble.appendChild(toolbar);
     group.appendChild(bubble);
 
-    // Reactions row
     const reactionsRow = document.createElement("div");
     reactionsRow.className = "chat-reactions-row";
     group.appendChild(reactionsRow);
     watchReactions(msgKey, reactionsRow);
 
-    // Timestamp
     const timeEl = document.createElement("div");
     timeEl.className = "chat-time";
     timeEl.textContent = formatTime(data.time);
@@ -2162,8 +2173,6 @@ document.getElementById("admin-event-btn").onclick = async () => {
     dmMessages.appendChild(row);
   }
 
-  function formatTimeShort(ts) { return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
-
   async function sendDM() {
     if (!requireVerified("Direct Messages")) return;
     const user = me();
@@ -2508,6 +2517,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else { index = 0; clearTimeout(timer); }
   });
 });
+
 // =====================================
 // ADMIN BROADCASTS — toast stack
 // =====================================
@@ -2521,7 +2531,6 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   document.body.appendChild(stack);
 
-  // ── Event overlay (nyan / oiia cat) ──
   function playEventOverlay(type) {
     const old = document.getElementById("event-cat-overlay");
     if (old) old.remove();
@@ -2531,11 +2540,10 @@ document.addEventListener('DOMContentLoaded', () => {
       oiia: "https://tenor.com/uSUaf7lw8uj.gif",
     };
 
-    // detect which cat from text
     let catUrl = null;
     if (type && type.toLowerCase().includes("nyan")) catUrl = urls.nyan;
     else if (type && (type.toLowerCase().includes("oiia") || type.toLowerCase().includes("cat"))) catUrl = urls.oiia;
-    else catUrl = urls.nyan; // default
+    else catUrl = urls.nyan;
 
     const overlay = document.createElement("div");
     overlay.id = "event-cat-overlay";
@@ -2600,7 +2608,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = snap.val();
     if (!data || !data.text) return;
 
-    // play cat overlay for events
     if (data.type === "event") playEventOverlay(data.text);
 
     const c = COLORS[data.type] || COLORS.announcement;
