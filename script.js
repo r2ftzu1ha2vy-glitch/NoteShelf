@@ -19,6 +19,8 @@ const games = [
   { name: "ADventure",            url: "https://r2ftzu1ha2vy-glitch.github.io/ADventure/",            category: "Annoying", image: "https://iili.io/qZT1JF1.png" },
   { name: "HexAsteal",            url: "https://r2ftzu1ha2vy-glitch.github.io/HexAsteal/",            category: "Puzzle",   image: "https://iili.io/BTGB19a.jpg" },
   { name: "8-Ball Billiards",     url: "https://r2ftzu1ha2vy-glitch.github.io/8-Ball-Billiards/",     category: "Sports",   image: "https://iili.io/B5KquAx.png" },
+  { name: "Vaults",               url: "https://r2ftzu1ha2vy-glitch.github.io/Vaults/",               category: "Horror",   image: "https://iili.io/BsmUwTG.png" },
+];
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
