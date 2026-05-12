@@ -1516,14 +1516,9 @@ function createGameButton(game) {
 
   chatCloseBtn.onclick = () => {
     isPanelOpen = false;
-    chatPanel.classList.remove("chat-open");
-    chatPanel.classList.add("chat-closing");
-    chatPanel.addEventListener("animationend", () => {
-      chatPanel.style.display = "none";
-      chatPanel.classList.remove("chat-closing");
-    }, { once: true });
+    chatPanel.style.display = "none";
     cancelReply();
-  };
+};
 
   // ── Char counter & typing ──
   chatInput.addEventListener("input", () => {
