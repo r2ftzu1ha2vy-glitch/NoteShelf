@@ -3928,28 +3928,38 @@ document.addEventListener("ns_game_closed", () => {
   _activeQuestGame = null;
 });
 
-// Patch: emit events when games open/close
-// We do this by wrapping the global __ns_loadGame after it's set
-(function patchGameEvents() {
-  const CHECK_INTERVAL = 300;
-  let patched = false;
-  const interval = setInterval(() => {
-    if (window.__ns_loadGame && !patched) {
-      patched = true;
-      clearInterval(interval);
-      const orig = window.__ns_loadGame;
-      window.__ns_loadGame = function(game) {
-        document.dispatchEvent(new CustomEvent("ns_game_opened", { detail: { name: game.name } }));
-        return orig.call(this, game);
-      };
-    }
-    // Also patch viewer close button
+// =====================================
+// QUEST GAME HOOKS — single unified patch
+// =====================================
+(function patchQuestHooks() {
+  // Wait for viewer close button to exist, then patch it once
+  function patchCloseBtn() {
     const closeBtn = document.getElementById("viewer-close-btn");
     if (closeBtn && !closeBtn._questPatched) {
       closeBtn._questPatched = true;
       closeBtn.addEventListener("click", () => {
-        document.dispatchEvent(new CustomEvent("ns_game_closed"));
+        pauseQuestTimers(_activeQuestGame);
+        _activeQuestGame = null;
       });
     }
-  }, CHECK_INTERVAL);
+  }
+
+  // Poll until the close button exists (it's created inside DOMContentLoaded)
+  const checkInterval = setInterval(() => {
+    patchCloseBtn();
+    // Also patch __ns_loadGame once it exists
+    if (window.__ns_loadGame && !window.__ns_loadGame._questPatched) {
+      const orig = window.__ns_loadGame;
+      window.__ns_loadGame = function(game) {
+        // Pause any current quest timer before switching games
+        if (_activeQuestGame && _activeQuestGame !== game.name) {
+          pauseQuestTimers(_activeQuestGame);
+        }
+        startQuestTimer(game.name);
+        return orig.call(this, game);
+      };
+      window.__ns_loadGame._questPatched = true;
+      clearInterval(checkInterval);
+    }
+  }, 200);
 })();
