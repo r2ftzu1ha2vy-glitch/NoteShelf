@@ -3960,3 +3960,826 @@ document.addEventListener("ns_game_closed", () => {
     }
   }, 200);
 })();
+// =====================================
+// NOTESHELF SOCIAL FEATURES
+// Drop-in addition to script.js
+// =====================================
+// Adds:
+//   1. Leaderboard      — top players by XP/level, visible to all
+//   2. User Profile Cards — click a username in chat to see level, avatar, fav game
+//   3. Recently Played  — track & show last 3–5 games per user
+// =====================================
+
+// ─────────────────────────────────────
+// RECENTLY PLAYED
+// ─────────────────────────────────────
+(function initRecentlyPlayed() {
+
+  const MAX_RECENT = 5;
+  const STORAGE_KEY = () => `ns_recent_${me() || "guest"}`;
+
+  function getRecent() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY()) || "[]"); }
+    catch { return []; }
+  }
+
+  function saveRecent(list) {
+    localStorage.setItem(STORAGE_KEY(), JSON.stringify(list));
+  }
+
+  // Record a played game (called from quest hooks / game load)
+  function recordGame(gameName) {
+    if (!gameName) return;
+    const list = getRecent().filter(g => g !== gameName);
+    list.unshift(gameName);
+    saveRecent(list.slice(0, MAX_RECENT));
+    renderRecentRow();
+  }
+
+  // Expose globally so quest hooks can call it
+  window.__ns_recordGame = recordGame;
+
+  // Listen for game opens
+  document.addEventListener("ns_game_opened", e => {
+    if (e.detail?.name) recordGame(e.detail.name);
+  });
+
+  // ── Build the "Recently Played" UI strip ──
+  function renderRecentRow() {
+    const games = window.__ns_games || [];
+    const recent = getRecent();
+    const strip = document.getElementById("ns-recent-strip");
+    if (!strip) return;
+
+    if (!me() || !recent.length) {
+      strip.style.display = "none";
+      return;
+    }
+
+    strip.style.display = "";
+    strip.innerHTML = `
+      <div class="rp-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        Recently Played
+      </div>
+      <div class="rp-cards" id="rp-cards"></div>
+    `;
+
+    const cards = document.getElementById("rp-cards");
+    recent.forEach(name => {
+      const g = games.find(x => x.name === name);
+      if (!g) return;
+      const btn = document.createElement("button");
+      btn.className = "rp-card";
+      btn.innerHTML = `
+        <img src="${g.image || "https://iili.io/KUgv2G2.png"}" alt="${g.name}">
+        <span>${g.name}</span>
+      `;
+      btn.onclick = () => {
+        if (window.__ns_loadGame) window.__ns_loadGame(g);
+      };
+      cards.appendChild(btn);
+    });
+  }
+
+  // Inject the strip markup into the page after search bar
+  function injectStrip() {
+    const existing = document.getElementById("ns-recent-strip");
+    if (existing) return;
+    const strip = document.createElement("div");
+    strip.id = "ns-recent-strip";
+    strip.style.display = "none";
+
+    const searchWrap = document.getElementById("search-wrap");
+    if (searchWrap) {
+      searchWrap.parentNode.insertBefore(strip, searchWrap.nextSibling);
+    } else {
+      document.querySelector(".page-content")?.appendChild(strip);
+    }
+
+    // Inject styles once
+    if (!document.getElementById("ns-recent-styles")) {
+      const s = document.createElement("style");
+      s.id = "ns-recent-styles";
+      s.textContent = `
+        #ns-recent-strip {
+          margin: 10px 0 6px 158px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .rp-label {
+          font-family: 'Cinzel', serif;
+          font-size: 9px;
+          letter-spacing: 2.5px;
+          text-transform: uppercase;
+          color: var(--gold-dim);
+          opacity: 0.75;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        .rp-cards {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .rp-card {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding: 5px 10px 5px 5px;
+          background: var(--ink-mid);
+          border: 1px solid var(--ink-border);
+          border-radius: 30px;
+          cursor: pointer;
+          transition: all 0.22s ease;
+          color: var(--cream);
+          font-family: 'Cinzel', serif;
+          font-size: 10px;
+          letter-spacing: 0.5px;
+          white-space: nowrap;
+        }
+        .rp-card img {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          object-fit: cover;
+          flex-shrink: 0;
+          border: 1px solid var(--ink-border);
+        }
+        .rp-card:hover {
+          border-color: var(--gold-dim);
+          background: rgba(255,215,0,0.08);
+          color: var(--gold);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 14px rgba(255,215,0,0.12);
+        }
+        @media (max-width: 768px) {
+          #ns-recent-strip { margin-left: 62px !important; }
+        }
+      `;
+      document.head.appendChild(s);
+    }
+
+    renderRecentRow();
+  }
+
+  window.addEventListener("ns_login", () => {
+    injectStrip();
+    renderRecentRow();
+  });
+  window.addEventListener("ns_logout", () => {
+    const strip = document.getElementById("ns-recent-strip");
+    if (strip) strip.style.display = "none";
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", injectStrip);
+  } else {
+    injectStrip();
+  }
+
+  if (me()) renderRecentRow();
+
+})();
+
+
+// ─────────────────────────────────────
+// USER PROFILE CARDS
+// ─────────────────────────────────────
+(function initUserProfileCards() {
+
+  // Cache to avoid repeated DB hits
+  const profileCache = {};
+
+  async function fetchProfile(username) {
+    if (profileCache[username]) return profileCache[username];
+    const snap = await db.ref("users/" + username).once("value");
+    const data = snap.val() || {};
+    const xp   = data.xp || 0;
+    const lvl  = getLevelFromXP(xp);
+
+    // Derive "favorite game" from recent played data stored per user
+    let recentGames = [];
+    try {
+      const stored = localStorage.getItem(`ns_recent_${username}`);
+      if (stored) recentGames = JSON.parse(stored);
+    } catch {}
+
+    profileCache[username] = {
+      avatar:       data.avatar || "",
+      xp,
+      level:        lvl,
+      verified:     data.emailVerified || false,
+      isAdmin:      data.isAdmin || false,
+      isBanAdmin:   data.isBanAdmin || false,
+      recentGames,
+      favoriteGame: recentGames[0] || null,
+    };
+    return profileCache[username];
+  }
+
+  function showProfileCard(username, anchorEl) {
+    // Remove any existing card
+    const old = document.getElementById("ns-profile-card");
+    if (old) {
+      if (old._username === username) { old.remove(); return; } // toggle off
+      old.remove();
+    }
+
+    const card = document.createElement("div");
+    card.id = "ns-profile-card";
+    card._username = username;
+    card.style.cssText = `
+      position:fixed;z-index:99990;
+      background:linear-gradient(160deg,#141219,#0D0B12);
+      border:1px solid rgba(184,150,12,0.5);
+      border-radius:16px;
+      padding:20px 20px 16px;
+      width:230px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.85),0 0 0 1px rgba(255,215,0,0.04);
+      animation:pcFadeIn 0.22s cubic-bezier(0.4,0,0.2,1);
+      pointer-events:auto;
+    `;
+
+    card.innerHTML = `
+      <style>
+        @keyframes pcFadeIn { from{opacity:0;transform:scale(0.93) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+        .pc-spinner { width:20px;height:20px;border:2px solid rgba(255,215,0,0.15);border-top-color:#FFD700;border-radius:50%;animation:spin 0.7s linear infinite;margin:12px auto; }
+        @keyframes spin { to{transform:rotate(360deg)} }
+      </style>
+      <div class="pc-spinner"></div>
+    `;
+
+    document.body.appendChild(card);
+
+    // Position near anchor
+    function positionCard() {
+      const rect = anchorEl ? anchorEl.getBoundingClientRect() : { left: window.innerWidth/2, top: window.innerHeight/2, width: 0, height: 0 };
+      let top  = rect.bottom + window.scrollY + 8;
+      let left = rect.left + window.scrollX - 60;
+      if (left + 230 > window.innerWidth - 12) left = window.innerWidth - 242;
+      if (left < 8) left = 8;
+      if (top + 260 > window.innerHeight + window.scrollY) top = rect.top + window.scrollY - 268;
+      card.style.top  = top + "px";
+      card.style.left = left + "px";
+    }
+    positionCard();
+
+    // Fetch and render
+    fetchProfile(username).then(profile => {
+      if (!document.getElementById("ns-profile-card")) return;
+      const games   = window.__ns_games || [];
+      const favGame = games.find(g => g.name === profile.favoriteGame);
+      const nextXp  = xpForNextLevel(profile.level);
+      const curXp   = xpForLevel(profile.level);
+      const pct     = nextXp ? Math.min(100, ((profile.xp - curXp) / (nextXp - curXp)) * 100) : 100;
+
+      const recentHTML = profile.recentGames.slice(0, 3).map(name => {
+        const g = games.find(x => x.name === name);
+        if (!g) return "";
+        return `<img src="${g.image || "https://iili.io/KUgv2G2.png"}" alt="${name}" title="${name}"
+                     style="width:28px;height:28px;border-radius:6px;object-fit:cover;border:1px solid rgba(255,215,0,0.2);">`;
+      }).join("");
+
+      const adminBadge = profile.isAdmin || profile.isBanAdmin
+        ? `<span style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:2px;background:rgba(255,215,0,0.1);border:1px solid rgba(184,150,12,0.45);color:#B8960C;border-radius:4px;padding:2px 6px;">MOD</span>`
+        : "";
+      const verifiedBadge = profile.verified
+        ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2.5" stroke-linecap="round" style="display:inline-block;vertical-align:middle;"><polyline points="20 6 9 17 4 12"/></svg>`
+        : "";
+
+      card.innerHTML = `
+        <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;">
+          <div style="width:46px;height:46px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid rgba(184,150,12,0.55);background:var(--ink-light);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:18px;font-weight:700;color:#B8960C;">
+            ${profile.avatar ? `<img src="${profile.avatar}" style="width:100%;height:100%;object-fit:cover;" alt="${username}">` : username.charAt(0).toUpperCase()}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-family:'Cinzel',serif;font-size:12px;font-weight:700;letter-spacing:1px;color:#FFD700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px;">
+              ${username} ${verifiedBadge}
+            </div>
+            <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${adminBadge}
+              <span style="font-family:'Cinzel Decorative',serif;font-size:11px;color:#FFD700;">Lv.${profile.level}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-family:'Cinzel',serif;font-size:9px;letter-spacing:1px;color:#B8960C;margin-bottom:4px;">
+            <span>XP</span>
+            <span>${profile.xp}${nextXp ? " / " + nextXp : ""}</span>
+          </div>
+          <div style="height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#B8960C,#FFD700);border-radius:3px;transition:width 0.5s ease;"></div>
+          </div>
+        </div>
+
+        ${favGame ? `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(255,215,0,0.04);border:1px solid rgba(184,150,12,0.2);border-radius:8px;margin-bottom:8px;">
+          <img src="${favGame.image || "https://iili.io/KUgv2G2.png"}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;flex-shrink:0;" alt="${favGame.name}">
+          <div>
+            <div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.7;margin-bottom:2px;">Last Played</div>
+            <div style="font-family:'EB Garamond',serif;font-size:13px;color:#F0E6CA;">${favGame.name}</div>
+          </div>
+        </div>` : ""}
+
+        ${recentHTML ? `
+        <div>
+          <div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.65;margin-bottom:6px;">Recent Games</div>
+          <div style="display:flex;gap:6px;">${recentHTML}</div>
+        </div>` : ""}
+      `;
+
+      positionCard();
+    });
+
+    // Dismiss on outside click / scroll / escape
+    function dismiss(e) {
+      const c = document.getElementById("ns-profile-card");
+      if (!c) { cleanup(); return; }
+      if (!c.contains(e.target) && e.target !== anchorEl && !anchorEl?.contains(e.target)) {
+        c.remove(); cleanup();
+      }
+    }
+    function onKey(e) { if (e.key === "Escape") { document.getElementById("ns-profile-card")?.remove(); cleanup(); } }
+    function cleanup() {
+      document.removeEventListener("click", dismiss, true);
+      document.removeEventListener("keydown", onKey);
+    }
+    setTimeout(() => {
+      document.addEventListener("click", dismiss, true);
+      document.addEventListener("keydown", onKey);
+    }, 80);
+  }
+
+  // ── Intercept clicks on chat sender names ──
+  function attachProfileCardToSender(el, username) {
+    if (!username || el._profileAttached) return;
+    el._profileAttached = true;
+    el.style.cursor = "pointer";
+    el.style.textDecoration = "underline dotted";
+    el.style.textDecorationColor = "rgba(184,150,12,0.4)";
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showProfileCard(username, el);
+    });
+    el.addEventListener("mouseenter", () => { el.style.color = "var(--gold)"; });
+    el.addEventListener("mouseleave", () => { el.style.color = ""; });
+  }
+
+  // ── MutationObserver to auto-attach to new chat messages ──
+  function observeChat() {
+    const targets = [
+      document.getElementById("chat-messages"),
+      document.getElementById("dm-messages"),
+    ].filter(Boolean);
+
+    targets.forEach(container => {
+      const obs = new MutationObserver(mutations => {
+        mutations.forEach(m => {
+          m.addedNodes.forEach(node => {
+            if (node.nodeType !== 1) return;
+            const senderEls = node.querySelectorAll ? node.querySelectorAll(".chat-sender") : [];
+            senderEls.forEach(el => attachProfileCardToSender(el, el.textContent?.trim().replace(" MOD", "")));
+            if (node.classList?.contains("chat-sender")) {
+              attachProfileCardToSender(node, node.textContent?.trim().replace(" MOD", ""));
+            }
+          });
+        });
+      });
+      obs.observe(container, { childList: true, subtree: true });
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", observeChat);
+  } else {
+    observeChat();
+  }
+
+  // Re-observe when chat panel opens
+  document.getElementById("chat-toggle")?.addEventListener("click", () => {
+    setTimeout(observeChat, 200);
+  });
+
+  window.__ns_showProfileCard = showProfileCard;
+
+})();
+
+
+// ─────────────────────────────────────
+// LEADERBOARD
+// ─────────────────────────────────────
+(function initLeaderboard() {
+
+  // ── Inject styles ──
+  const style = document.createElement("style");
+  style.id = "ns-leaderboard-styles";
+  style.textContent = `
+    #lb-btn-float {
+      position: fixed;
+      right: 20px;
+      bottom: 296px;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 1px solid rgba(184,150,12,0.55);
+      background: linear-gradient(135deg, #141219, #0D0B12);
+      color: #FFD700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 9998;
+      font-size: 22px;
+      box-shadow: 0 0 18px rgba(255,215,0,0.12), 0 4px 16px rgba(0,0,0,0.55);
+      transition: all 0.28s ease;
+    }
+    #lb-btn-float:hover {
+      background: linear-gradient(135deg, #FFD700, #D4A017);
+      color: #07060A;
+      border-color: #FFD700;
+      box-shadow: 0 0 30px rgba(255,215,0,0.4);
+      transform: scale(1.1);
+    }
+    #lb-btn-float:hover svg { stroke: #07060A; }
+    #lb-panel {
+      position: fixed;
+      right: 20px;
+      bottom: 90px;
+      width: 320px;
+      max-height: 480px;
+      background: linear-gradient(160deg, #141219, #0D0B12);
+      border: 1px solid rgba(184,150,12,0.45);
+      border-radius: 20px;
+      box-shadow: 0 24px 70px rgba(0,0,0,0.85);
+      z-index: 9998;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      font-family: 'Cinzel', serif;
+      animation: lbPop 0.26s cubic-bezier(0.4,0,0.2,1);
+    }
+    @keyframes lbPop {
+      from { transform: translateY(16px) scale(0.95); opacity: 0; }
+      to   { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    #lb-header {
+      padding: 14px 18px 12px;
+      background: linear-gradient(135deg, rgba(255,215,0,0.08), rgba(255,215,0,0.02));
+      border-bottom: 1px solid rgba(255,215,0,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #lb-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #FFD700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #lb-refresh-btn {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 1px solid rgba(184,150,12,0.3);
+      background: transparent;
+      color: #B8960C;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.22s;
+    }
+    #lb-refresh-btn:hover { border-color: #FFD700; color: #FFD700; transform: rotate(180deg); }
+    #lb-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(255,215,0,0.08);
+      flex-shrink: 0;
+    }
+    .lb-tab {
+      flex: 1;
+      padding: 8px 0;
+      font-family: 'Cinzel', serif;
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #B8960C;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      opacity: 0.65;
+      border-bottom: 2px solid transparent;
+    }
+    .lb-tab.active {
+      color: #FFD700;
+      opacity: 1;
+      border-bottom-color: #FFD700;
+      background: rgba(255,215,0,0.03);
+    }
+    .lb-tab:hover { opacity: 1; color: #FFD700; }
+    #lb-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+    #lb-list::-webkit-scrollbar { width: 3px; }
+    #lb-list::-webkit-scrollbar-thumb { background: rgba(184,150,12,0.4); border-radius: 2px; }
+    .lb-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      transition: background 0.18s;
+      cursor: pointer;
+      position: relative;
+    }
+    .lb-row:hover { background: rgba(255,215,0,0.04); }
+    .lb-row.me-row { background: rgba(255,215,0,0.06); }
+    .lb-rank {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: 13px;
+      font-weight: 900;
+      width: 28px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .lb-rank-1 { color: #FFD700; text-shadow: 0 0 12px rgba(255,215,0,0.6); }
+    .lb-rank-2 { color: #C0C0C0; }
+    .lb-rank-3 { color: #CD7F32; }
+    .lb-rank-n { color: rgba(184,150,12,0.5); font-family: 'Cinzel', serif; font-size: 11px; }
+    .lb-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid rgba(184,150,12,0.3);
+      background: var(--ink-light, #1C1924);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Cinzel', serif;
+      font-size: 12px;
+      font-weight: 700;
+      color: #B8960C;
+    }
+    .lb-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .lb-info { flex: 1; min-width: 0; }
+    .lb-name {
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #F0E6CA;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lb-row.me-row .lb-name { color: #FFD700; }
+    .lb-sub {
+      font-family: 'EB Garamond', serif;
+      font-size: 11px;
+      color: #B8960C;
+      opacity: 0.65;
+    }
+    .lb-xp {
+      font-family: 'Cinzel Decorative', serif;
+      font-size: 12px;
+      color: #FFD700;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    .lb-xp-sub {
+      font-family: 'Cinzel', serif;
+      font-size: 9px;
+      color: #B8960C;
+      opacity: 0.6;
+      text-align: right;
+    }
+    .lb-crown { font-size: 16px; position: absolute; top: -4px; right: 10px; }
+    #lb-loading {
+      padding: 28px;
+      text-align: center;
+      font-family: 'EB Garamond', serif;
+      font-style: italic;
+      font-size: 14px;
+      color: #B8960C;
+      opacity: 0.65;
+    }
+    #lb-me-row-fixed {
+      border-top: 1px solid rgba(255,215,0,0.08);
+      background: rgba(255,215,0,0.04);
+      flex-shrink: 0;
+    }
+    #lb-me-row-fixed .lb-row { padding: 10px 14px; }
+    @media (max-width: 768px) {
+      #lb-btn-float { right: 14px !important; bottom: 380px !important; width: 46px !important; height: 46px !important; }
+      #lb-panel { right: 0 !important; left: 0 !important; bottom: 0 !important; width: 100% !important; max-height: 75vh !important; border-radius: 20px 20px 0 0 !important; border-bottom: none !important; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // ── Build the floating button ──
+  const lbBtn = document.createElement("button");
+  lbBtn.id = "lb-btn-float";
+  lbBtn.title = "Leaderboard";
+  lbBtn.innerHTML = `
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="13" width="6" height="9" rx="1"/>
+      <rect x="9" y="9" width="6" height="13" rx="1"/>
+      <rect x="16" y="5" width="6" height="17" rx="1"/>
+      <polyline points="2 5 12 2 22 5"/>
+    </svg>
+  `;
+  document.body.appendChild(lbBtn);
+
+  // ── Build the panel ──
+  const lbPanel = document.createElement("div");
+  lbPanel.id = "lb-panel";
+  lbPanel.innerHTML = `
+    <div id="lb-header">
+      <div id="lb-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFD700" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="13" width="6" height="9" rx="1"/>
+          <rect x="9" y="9" width="6" height="13" rx="1"/>
+          <rect x="16" y="5" width="6" height="17" rx="1"/>
+        </svg>
+        Leaderboard
+      </div>
+      <button id="lb-refresh-btn" title="Refresh">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+      </button>
+    </div>
+    <div id="lb-tabs">
+      <button class="lb-tab active" data-tab="xp">By XP</button>
+      <button class="lb-tab" data-tab="level">By Level</button>
+    </div>
+    <div id="lb-list"><div id="lb-loading">Loading champions…</div></div>
+    <div id="lb-me-row-fixed" style="display:none;"></div>
+  `;
+  document.body.appendChild(lbPanel);
+
+  let isOpen = false;
+  let currentTab = "xp";
+  let lbData = [];
+  let myRank = null;
+
+  lbBtn.onclick = e => {
+    e.stopPropagation();
+    isOpen = !isOpen;
+    lbPanel.style.display = isOpen ? "flex" : "none";
+    if (isOpen) loadLeaderboard();
+  };
+
+  document.addEventListener("click", e => {
+    if (isOpen && !lbPanel.contains(e.target) && e.target !== lbBtn && !lbBtn.contains(e.target)) {
+      isOpen = false;
+      lbPanel.style.display = "none";
+    }
+  });
+
+  document.getElementById("lb-refresh-btn").onclick = e => {
+    e.stopPropagation();
+    loadLeaderboard(true);
+  };
+
+  document.querySelectorAll(".lb-tab").forEach(tab => {
+    tab.onclick = () => {
+      document.querySelectorAll(".lb-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentTab = tab.dataset.tab;
+      renderList();
+    };
+  });
+
+  let lastFetch = 0;
+
+  async function loadLeaderboard(force = false) {
+    if (!force && Date.now() - lastFetch < 60000 && lbData.length) { renderList(); return; }
+    const listEl = document.getElementById("lb-list");
+    listEl.innerHTML = `<div id="lb-loading">Loading champions…</div>`;
+
+    // Fetch top 50 users by XP
+    try {
+      const snap = await db.ref("users").orderByChild("xp").limitToLast(50).once("value");
+      const raw = [];
+      snap.forEach(child => {
+        const d = child.val();
+        if (!d || !d.xp) return;
+        raw.push({
+          username: child.key,
+          xp:       d.xp || 0,
+          level:    getLevelFromXP(d.xp || 0),
+          avatar:   d.avatar || "",
+          verified: d.emailVerified || false,
+        });
+      });
+      raw.sort((a, b) => b.xp - a.xp);
+      lbData = raw;
+      lastFetch = Date.now();
+
+      // Find current user rank
+      if (me()) {
+        const idx = lbData.findIndex(p => p.username === me());
+        if (idx >= 0) {
+          myRank = { rank: idx + 1, ...lbData[idx] };
+        } else {
+          // fetch own XP
+          const myXP = window.__ns_userXP || 0;
+          const below = lbData.filter(p => p.xp < myXP).length;
+          myRank = { rank: lbData.length - below + 1, username: me(), xp: myXP, level: getLevelFromXP(myXP), avatar: "" };
+        }
+      }
+
+      renderList();
+    } catch (err) {
+      console.error("Leaderboard fetch error:", err);
+      document.getElementById("lb-list").innerHTML = `<div id="lb-loading" style="color:#ff6b6b;">Failed to load. Try refreshing.</div>`;
+    }
+  }
+
+  function renderList() {
+    const listEl  = document.getElementById("lb-list");
+    const fixedEl = document.getElementById("lb-me-row-fixed");
+
+    const sorted = [...lbData].sort((a, b) => currentTab === "level" ? (b.level - a.level || b.xp - a.xp) : b.xp - a.xp);
+    listEl.innerHTML = "";
+
+    sorted.slice(0, 20).forEach((player, idx) => {
+      const rank = idx + 1;
+      const isMe = player.username === me();
+      const row  = buildRow(player, rank, isMe);
+      listEl.appendChild(row);
+    });
+
+    // Pinned own row at bottom if not in top 20
+    if (me() && myRank && myRank.rank > 20) {
+      fixedEl.style.display = "";
+      fixedEl.innerHTML = "";
+      fixedEl.appendChild(buildRow(myRank, myRank.rank, true, "You •"));
+    } else {
+      fixedEl.style.display = "none";
+    }
+  }
+
+  function buildRow(player, rank, isMe, namePrefix = "") {
+    const games = window.__ns_games || [];
+    const rankStr = rank <= 3 ? ["🥇","🥈","🥉"][rank - 1] : "#" + rank;
+    const rankClass = rank === 1 ? "lb-rank-1" : rank === 2 ? "lb-rank-2" : rank === 3 ? "lb-rank-3" : "lb-rank-n";
+
+    const row = document.createElement("div");
+    row.className = "lb-row" + (isMe ? " me-row" : "");
+
+    const av = document.createElement("div");
+    av.className = "lb-avatar";
+    if (player.avatar) {
+      const img = document.createElement("img");
+      img.src = player.avatar;
+      img.onerror = () => { av.innerHTML = ""; av.textContent = player.username.charAt(0).toUpperCase(); };
+      av.appendChild(img);
+    } else {
+      av.textContent = player.username.charAt(0).toUpperCase();
+    }
+
+    row.innerHTML = `
+      <div class="lb-rank ${rankClass}">${rankStr}</div>
+    `;
+    row.appendChild(av);
+    row.innerHTML += `
+      <div class="lb-info">
+        <div class="lb-name">${namePrefix}${player.username}${player.verified ? " ✓" : ""}</div>
+        <div class="lb-sub">Lv.${player.level}</div>
+      </div>
+      <div>
+        <div class="lb-xp">${player.xp.toLocaleString()}</div>
+        <div class="lb-xp-sub">XP</div>
+      </div>
+      ${rank === 1 ? '<div class="lb-crown">👑</div>' : ""}
+    `;
+
+    // Re-insert avatar after innerHTML overwrite
+    const rankEl = row.querySelector(".lb-rank");
+    row.insertBefore(av, rankEl.nextSibling);
+
+    row.onclick = () => {
+      if (window.__ns_showProfileCard) window.__ns_showProfileCard(player.username, row);
+    };
+
+    return row;
+  }
+
+  // Auto-refresh when panel opens if stale
+  window.addEventListener("ns_login",  () => { lbData = []; lastFetch = 0; });
+  window.addEventListener("ns_logout", () => { lbData = []; myRank = null; });
+
+})();
