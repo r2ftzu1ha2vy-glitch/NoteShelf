@@ -33,12 +33,17 @@ const freeGames = new Set([
 // =====================================
 const mobileGames = new Set([
   "Merger", "Shadow Boxing", "Highway Crash", "Tetricks", "Meme Rng",
-  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards"
+  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults"
 ]);
 const desktopGames = new Set([
   "Badminton Champion", "Build N Defend Tower", "Square Dodge", "RingBound",
-  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure"
+  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults"
 ]);
+
+// =====================================
+// LOCKED GAMES (shown under their own "Locked Games" tab)
+// =====================================
+const lockedGamesTabList = new Set(["HexAsteal", "8-Ball Billiards", "Vaults"]);
 
 // =====================================
 // SVG ICONS for category sidebar
@@ -671,6 +676,12 @@ document.addEventListener("DOMContentLoaded", () => {
       <iframe id="game-frame-main" src="" style="flex:1;border:none;width:100%;display:block;background:#000;"
         sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-popups allow-modals"
         referrerpolicy="no-referrer" allowfullscreen></iframe>
+      <button id="viewer-fs-exit-btn" aria-label="Exit fullscreen">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>
+          <path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+        </svg>
+      </button>
     </div>
     <div id="game-viewer-sidebar">
       <div id="game-viewer-sidebar-header">
@@ -763,6 +774,11 @@ function buildViewerSidebar(activeName) {
 
   function closeViewer() {
     gameViewer.classList.add("closing");
+    gameViewer.classList.remove("ns-fullscreen-mobile");
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
     gameViewer.addEventListener("animationend", () => {
       gameViewer.style.display = "none";
       gameViewer.classList.remove("closing");
@@ -773,14 +789,72 @@ function buildViewerSidebar(activeName) {
   }
 
   viewerCloseBtn.onclick = closeViewer;
-  viewerFullscreenBtn.onclick = () => {
-    if (gameFrameMain.requestFullscreen)            gameFrameMain.requestFullscreen();
-    else if (gameFrameMain.webkitRequestFullscreen) gameFrameMain.webkitRequestFullscreen();
-    else if (gameFrameMain.mozRequestFullScreen)    gameFrameMain.mozRequestFullScreen();
-    else if (gameFrameMain.msRequestFullscreen)     gameFrameMain.msRequestFullscreen();
-  };
+
+  const viewerFsExitBtn = document.getElementById("viewer-fs-exit-btn");
+  const isTouchDevice = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+
+  function enterMobileFullscreen() {
+    gameViewer.classList.add("ns-fullscreen-mobile");
+  }
+  function exitMobileFullscreen() {
+    gameViewer.classList.remove("ns-fullscreen-mobile");
+  }
+
+  function toggleFullscreen() {
+    const target = document.getElementById("game-viewer-main");
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement ||
+                 document.mozFullScreenElement || document.msFullscreenElement;
+
+    // Prefer the native Fullscreen API when available and not already mobile-css-fullscreen
+    if (!fsEl && !gameViewer.classList.contains("ns-fullscreen-mobile")) {
+      const req = target.requestFullscreen || target.webkitRequestFullscreen ||
+                  target.mozRequestFullScreen || target.msRequestFullscreen;
+      if (req) {
+        req.call(target).then(() => {
+          if (isTouchDevice) enterMobileFullscreen();
+        }).catch(() => {
+          // Native API rejected (common on iOS Safari) — fall back to CSS fullscreen
+          enterMobileFullscreen();
+        });
+        return;
+      }
+    }
+    // No native support at all (iOS Safari iframes) — CSS fallback
+    if (!gameViewer.classList.contains("ns-fullscreen-mobile")) {
+      enterMobileFullscreen();
+    } else {
+      exitMobileFullscreen();
+      if (fsEl) {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+        else if (document.msExitFullscreen) document.msExitFullscreen();
+      }
+    }
+  }
+
+  viewerFullscreenBtn.onclick = toggleFullscreen;
+  viewerFsExitBtn && viewerFsExitBtn.addEventListener("click", () => {
+    exitMobileFullscreen();
+    if (document.fullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+  });
+
+  ["fullscreenchange","webkitfullscreenchange","mozfullscreenchange","MSFullscreenChange"].forEach(ev => {
+    document.addEventListener(ev, () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement ||
+                   document.mozFullScreenElement || document.msFullscreenElement;
+      if (!fsEl) exitMobileFullscreen();
+    });
+  });
+
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && gameViewer.style.display === "flex") closeViewer();
+    if (e.key === "Escape" && gameViewer.style.display === "flex") {
+      if (gameViewer.classList.contains("ns-fullscreen-mobile")) { exitMobileFullscreen(); return; }
+      closeViewer();
+    }
   });
 
   // Patch game viewer to emit quest events
@@ -891,10 +965,61 @@ function createGameButton(game) {
          .forEach(g => gameListDiv.appendChild(createGameButton(g)));
   }
 
+  function renderMobileGames() {
+    gameListDiv.innerHTML = "";
+    games.filter(g => mobileGames.has(g.name)).forEach(g => gameListDiv.appendChild(createGameButton(g)));
+  }
+
+  function renderDesktopGames() {
+    gameListDiv.innerHTML = "";
+    games.filter(g => desktopGames.has(g.name)).forEach(g => gameListDiv.appendChild(createGameButton(g)));
+  }
+
+  function renderLockedGames() {
+    gameListDiv.innerHTML = "";
+    games.filter(g => lockedGamesTabList.has(g.name)).forEach(g => gameListDiv.appendChild(createGameButton(g)));
+  }
+
   searchBar && searchBar.addEventListener("input", e => renderGames(e.target.value));
 
   const categories = ["All Games","Horror","Puzzle","Racing","Action","Rpg","Sports","Chill","Timing","Defense","Reflex","Annoying"];
   let activeBtn = null;
+
+  // ── Special tabs: Mobile / PC / Locked Games ──
+  const specialTabSVGs = {
+    "Mobile":       mobileSVG,
+    "PC":           desktopSVG,
+    "Locked Games": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+  };
+  const specialTabs = [
+    { label: "Mobile",       render: renderMobileGames },
+    { label: "PC",           render: renderDesktopGames },
+    { label: "Locked Games", render: renderLockedGames },
+  ];
+
+  const specialTabsDivider = document.createElement("div");
+  specialTabsDivider.style.cssText = "height:1px;background:var(--ink-border);margin:6px 2px;flex-shrink:0;";
+  categorySidebar.appendChild(specialTabsDivider);
+
+  specialTabs.forEach(tab => {
+    const btn      = document.createElement("button");
+    btn.className  = "category-button special-tab-button";
+    const iconWrap = document.createElement("span"); iconWrap.className = "cat-icon"; iconWrap.innerHTML = specialTabSVGs[tab.label] || "";
+    const text     = document.createElement("span"); text.className = "category-text"; text.textContent = tab.label;
+    btn.appendChild(iconWrap); btn.appendChild(text);
+    btn.onclick = () => {
+      if (activeBtn) activeBtn.classList.remove("active");
+      btn.classList.add("active");
+      activeBtn = btn;
+      searchBar.value = "";
+      tab.render();
+    };
+    categorySidebar.appendChild(btn);
+  });
+
+  const categoriesDivider = document.createElement("div");
+  categoriesDivider.style.cssText = "height:1px;background:var(--ink-border);margin:6px 2px;flex-shrink:0;";
+  categorySidebar.appendChild(categoriesDivider);
 
   categories.forEach(cat => {
     const btn      = document.createElement("button");
@@ -912,9 +1037,11 @@ function createGameButton(game) {
     categorySidebar.appendChild(btn);
   });
 
-  if (categorySidebar.firstChild) {
-    categorySidebar.firstChild.classList.add("active");
-    activeBtn = categorySidebar.firstChild;
+  // Activate "All Games" (first category button after the special tabs) by default
+  const allGamesBtnEl = categorySidebar.querySelector(".category-button:not(.special-tab-button)");
+  if (allGamesBtnEl) {
+    allGamesBtnEl.classList.add("active");
+    activeBtn = allGamesBtnEl;
   }
   renderGames();
 
