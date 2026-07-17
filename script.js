@@ -3521,12 +3521,8 @@ const LEVEL_THRESHOLDS = [
 
 // Games unlocked per level (level = index+1, level 1 = always unlocked)
 const LEVEL_UNLOCKS = {
-  1: ["Merger","Shadow Boxing","Badminton Champion","Tetricks","Build N Defend Tower","Meme Rng","Star Runner","ADventure"],
-  2: ["Square Dodge","Tap Tempo"],
-  3: ["Highway Crash","RingBound"],
-  4: ["Cosmic Duel","Pizza Panic"],
-  5: ["8-Ball Billiards","Meadow Farm"],
-  6: ["HexAsteal", "Vaults"],
+  5: ["HexAsteal", "8-Ball Billiards"],
+  6: ["Vaults"],
 };
 
 function xpForLevel(lvl) { return LEVEL_THRESHOLDS[Math.min(lvl - 1, LEVEL_THRESHOLDS.length - 1)] || 0; }
