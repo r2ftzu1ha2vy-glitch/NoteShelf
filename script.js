@@ -34,11 +34,11 @@ const freeGames = new Set([
 // =====================================
 const mobileGames = new Set([
   "Merger", "Shadow Boxing", "Highway Crash", "Tetricks", "Meme Rng",
-  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults"
+  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults", "Digilock"
 ]);
 const desktopGames = new Set([
   "Badminton Champion", "Build N Defend Tower", "Square Dodge", "RingBound",
-  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults"
+  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults", "Digilock"
 ]);
 
 // =====================================
