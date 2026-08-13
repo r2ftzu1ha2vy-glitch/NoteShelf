@@ -1848,6 +1848,48 @@ input[type="email"]:focus { border-color: var(--gold-dim); }
   filter: brightness(0.55) saturate(0.4);
   transition: filter 0.28s ease, transform 0.4s ease;
 }
+
+/* ════════════════════════════════════════
+   GAME AVAILABILITY OVERLAY
+════════════════════════════════════════ */
+.game-availability-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 8px;
+}
+.game-availability-overlay.is-unavailable {
+  background: rgba(7,6,10,0.78);
+  backdrop-filter: blur(2px);
+  color: #ff6b6b;
+  text-shadow: 0 0 14px rgba(255,107,107,0.5);
+}
+.game-availability-overlay.is-available {
+  background: rgba(46,204,113,0.14);
+  color: #2ecc71;
+  text-shadow: 0 0 14px rgba(46,204,113,0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.game-button:hover .game-availability-overlay.is-available {
+  opacity: 1;
+}
+.game-unavailable img {
+  filter: brightness(0.5) saturate(0.35);
+}
+.sidebar-unavailable .sidebar-game-thumb {
+  opacity: 0.75;
+}
 .game-locked:hover img {
   filter: brightness(0.65) saturate(0.5);
 }
