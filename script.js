@@ -26,6 +26,26 @@ const games = [
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
 
+// =====================================
+// GAME AVAILABILITY (owner-controlled)
+// =====================================
+// Only the owner (username "BabyFounder" or this email) can toggle games
+// available/unavailable. Synced live via Firebase so every visitor sees it.
+const OWNER_USERNAME = "BabyFounder";
+const OWNER_EMAIL     = "babyfounder@noteshelf.gg"; // update to the real owner email if different
+
+function isSiteOwner(username, email) {
+  if (username && username === OWNER_USERNAME) return true;
+  if (email && email.toLowerCase() === OWNER_EMAIL.toLowerCase()) return true;
+  return false;
+}
+window.__ns_isSiteOwner = isSiteOwner;
+
+// { [gameName]: { available: bool, message: string } } — populated live from Firebase
+window.__ns_gameAvailability = {};
+// When true, clicking a game card in "manage" mode toggles it instead of opening it
+window.__ns_gamesManageMode = false;
+
 const freeGames = new Set([
   "Merger", "Shadow Boxing", "Badminton Champion", "Tetricks", "Build N Defend Tower"
 ]);
@@ -136,6 +156,25 @@ const db   = firebase.database();
 const auth = firebase.auth();
 
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
+// =====================================
+// GAME AVAILABILITY — live sync
+// =====================================
+db.ref("gameAvailability").on("value", snap => {
+  window.__ns_gameAvailability = snap.val() || {};
+  document.dispatchEvent(new CustomEvent("ns_game_availability_changed"));
+});
+
+function isGameAvailable(gameName) {
+  const entry = window.__ns_gameAvailability[gameName];
+  return !entry || entry.available !== false;
+}
+function getGameUnavailableMessage(gameName) {
+  const entry = window.__ns_gameAvailability[gameName];
+  return (entry && entry.message) || "Game Unavailable For Now";
+}
+window.__ns_isGameAvailable = isGameAvailable;
+window.__ns_getGameUnavailableMessage = getGameUnavailableMessage;
 
 const actionCodeSettings = {
     url: 'https://r2ftzu1ha2vy-glitch.github.io/Noteshelf/',
@@ -713,16 +752,18 @@ function buildViewerSidebar(activeName) {
     const loginLocked = !me() && !freeGames.has(g.name);
     const levelLocked = me() && !isGameUnlockedByLevel(g.name, userXP);
     const locked = loginLocked || levelLocked;
+    const unavailable = !isGameAvailable(g.name);
+    const manageMode = window.__ns_gamesManageMode && isSiteOwner(me(), window.__ns_ownerCheckEmail || "");
 
     const btn = document.createElement("button");
-    btn.className = "sidebar-game-btn" + (g.name === activeName ? " active" : "") + (locked ? " sidebar-locked" : "");
+    btn.className = "sidebar-game-btn" + (g.name === activeName ? " active" : "") + (locked ? " sidebar-locked" : "") + (unavailable ? " sidebar-unavailable" : "");
     btn.style.position = "relative";
 
     const thumb = document.createElement("img");
     thumb.className = "sidebar-game-thumb";
     thumb.src = g.image || defaultImg;
     thumb.alt = g.name;
-    if (locked) thumb.style.cssText = "filter:brightness(0.45) saturate(0.3);";
+    if (locked || unavailable) thumb.style.cssText = "filter:brightness(0.45) saturate(0.3);";
 
     const name = document.createElement("div");
     name.className = "sidebar-game-name";
@@ -730,6 +771,13 @@ function buildViewerSidebar(activeName) {
 
     btn.appendChild(thumb);
     btn.appendChild(name);
+
+    if (manageMode || unavailable) {
+      const availOverlay = document.createElement("div");
+      availOverlay.style.cssText = `position:absolute;bottom:0;left:0;right:0;padding:3px 4px;text-align:center;font-family:'Cinzel',serif;font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${unavailable ? "#ff6b6b" : "#2ecc71"};background:rgba(7,6,10,0.85);`;
+      availOverlay.textContent = unavailable ? "Unavailable" : "Available";
+      btn.appendChild(availOverlay);
+    }
 
     if (locked) {
       const lockEl = document.createElement("div");
@@ -749,6 +797,8 @@ function buildViewerSidebar(activeName) {
     }
 
     btn.onclick = () => {
+      if (manageMode) { toggleGameAvailability(g.name); return; }
+      if (unavailable) { showGameUnavailablePopup(g.name); return; }
       if (loginLocked) { showLoginGate(); return; }
       if (levelLocked) { showLevelLockGate(g.name, getRequiredLevel(g.name)); return; }
       loadGameInViewer(g);
@@ -759,6 +809,7 @@ function buildViewerSidebar(activeName) {
 }
 
   function loadGameInViewer(game) {
+    if (!isGameAvailable(game.name)) { showGameUnavailablePopup(game.name); return; }
     pauseQuestTimers(_activeQuestGame);
     startQuestTimer(game.name);
     if (!me() && !freeGames.has(game.name)) { showLoginGate(); return; }
@@ -880,12 +931,23 @@ function createGameButton(game) {
   // Logged in but level too low
   const levelLocked = user && !isGameUnlockedByLevel(game.name, userXP);
   const locked = loginLocked || levelLocked;
+  const unavailable = !isGameAvailable(game.name);
+  const manageMode = window.__ns_gamesManageMode && isSiteOwner(user, window.__ns_ownerCheckEmail || "");
 
   const btn = document.createElement("button");
-  btn.className = "game-button" + (locked ? " game-locked" : "");
+  btn.className = "game-button" + (locked ? " game-locked" : "") + (unavailable ? " game-unavailable" : "");
   const img = document.createElement("img"); img.src = game.image || defaultImg; img.alt = game.name;
   const label = document.createElement("div"); label.textContent = game.name;
   btn.appendChild(img); btn.appendChild(label);
+
+  // Availability overlay — shown to EVERYONE while manage mode is on (owner view),
+  // and always shown to everyone (as "Unavailable") once a game is actually unavailable.
+  if (manageMode || unavailable) {
+    const availOverlay = document.createElement("div");
+    availOverlay.className = "game-availability-overlay" + (unavailable ? " is-unavailable" : " is-available");
+    availOverlay.textContent = unavailable ? "Unavailable" : "Available";
+    btn.appendChild(availOverlay);
+  }
 
   if (locked) {
     const lockOverlay = document.createElement("div");
@@ -909,6 +971,8 @@ function createGameButton(game) {
   }
 
   btn.onclick = () => {
+    if (manageMode) { toggleGameAvailability(game.name); return; }
+    if (unavailable) { showGameUnavailablePopup(game.name); return; }
     if (loginLocked) { showLoginGate(); return; }
     if (levelLocked) { showLevelLockGate(game.name, getRequiredLevel(game.name)); return; }
     loadGameInViewer(game);
@@ -945,6 +1009,63 @@ function createGameButton(game) {
 
   return btn;
 }
+
+// =====================================
+// GAME AVAILABILITY — popup + owner toggle
+// =====================================
+function showGameUnavailablePopup(gameName) {
+  const message = getGameUnavailableMessage(gameName);
+  const existing = document.getElementById("game-unavailable-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "game-unavailable-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(7,6,10,0.82);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;";
+  overlay.innerHTML = `
+    <div style="background:linear-gradient(160deg,#141219,#0D0B12);border:1px solid rgba(184,150,12,0.45);border-radius:20px;padding:36px 32px;max-width:380px;width:100%;text-align:center;box-shadow:0 40px 100px rgba(0,0,0,0.85);font-family:'Cinzel',serif;">
+      <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,rgba(255,107,107,0.16),rgba(255,107,107,0.04));border:1px solid rgba(255,107,107,0.5);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <h3 style="color:#FFD700;font-size:15px;letter-spacing:1.5px;margin-bottom:10px;">${gameName}</h3>
+      <p style="font-family:'EB Garamond',serif;color:#F0E6CA;font-size:15px;line-height:1.6;margin-bottom:24px;">${message}</p>
+      <button id="game-unavailable-close" style="padding:11px 28px;background:linear-gradient(135deg,#FFD700,#D4A017);border:none;border-radius:30px;color:#07060A;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;">Okay</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  document.getElementById("game-unavailable-close").onclick = close;
+  overlay.onclick = e => { if (e.target === overlay) close(); };
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); }
+  });
+}
+window.__ns_showGameUnavailablePopup = showGameUnavailablePopup;
+
+async function toggleGameAvailability(gameName) {
+  const currentlyAvailable = isGameAvailable(gameName);
+  if (currentlyAvailable) {
+    // Going from Available -> Unavailable: owner supplies the message players will see
+    const msg = prompt(
+      `Mark "${gameName}" as Unavailable.\n\nEnter the message players will see when they click it (leave blank for the default "Game Unavailable For Now"):`
+    );
+    if (msg === null) return; // cancelled
+    await db.ref("gameAvailability/" + gameName).set({
+      available: false,
+      message: msg.trim() || "Game Unavailable For Now",
+      updatedBy: me(),
+      updatedAt: Date.now(),
+    });
+  } else {
+    // Going from Unavailable -> Available
+    await db.ref("gameAvailability/" + gameName).set({
+      available: true,
+      message: "",
+      updatedBy: me(),
+      updatedAt: Date.now(),
+    });
+  }
+}
+window.__ns_toggleGameAvailability = toggleGameAvailability;
 
   function renderGames(filter) {
     filter = filter || "";
@@ -1046,6 +1167,12 @@ function createGameButton(game) {
     activeBtn = allGamesBtnEl;
   }
   renderGames();
+
+  // Live-update the grid (and viewer sidebar, if open) when availability changes
+  document.addEventListener("ns_game_availability_changed", () => {
+    renderGames(searchBar ? searchBar.value : "");
+    if (gameViewer.style.display === "flex" && currentGameName) buildViewerSidebar(currentGameName);
+  });
 
   const trailerBtnEl = document.getElementById("trailer-btn");
   if (trailerBtnEl) {
@@ -1373,6 +1500,8 @@ function createGameButton(game) {
     if (banPanel) banPanel.style.display = "none";
     const banToggle = document.getElementById("ban-manager-toggle-btn");
     if (banToggle) banToggle.remove();
+    window.__ns_gamesManageMode = false;
+    window.__ns_ownerCheckEmail = "";
     window.dispatchEvent(new CustomEvent("ns_logout"));
     renderGames(searchBar ? searchBar.value : "");
     if (gameViewer.style.display === "flex" && currentGameName) buildViewerSidebar(currentGameName);
@@ -1445,12 +1574,20 @@ function createGameButton(game) {
   // FIX: accepts `username` param so site-status can be gated to BabyFounder only.
   // FIX: announce/event button handlers are now INSIDE this function (were orphaned outside).
   // =====================================
-  function buildBanAdminPanel(username) {
+  async function buildBanAdminPanel(username) {
     const existing = document.getElementById("ban-admin-panel");
     if (existing) { existing.style.display = "block"; return; }
 
-    // Only BabyFounder sees the site status section
-    const isFounder = username === "BabyFounder";
+    // Only BabyFounder / the owner email sees the site status + game-availability sections
+    if (username !== OWNER_USERNAME) {
+      try {
+        const s = await db.ref("users/" + username + "/email").once("value");
+        window.__ns_ownerCheckEmail = s.val() || "";
+      } catch (_) { window.__ns_ownerCheckEmail = ""; }
+    } else {
+      window.__ns_ownerCheckEmail = "";
+    }
+    const isFounder = isSiteOwner(username, window.__ns_ownerCheckEmail || "");
 
     const siteStatusHTML = isFounder ? `
       <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
@@ -1458,6 +1595,19 @@ function createGameButton(game) {
         <button id="site-status-toggle-btn" style="width:100%;padding:11px;border-radius:8px;border:1px solid rgba(46,204,113,0.5);background:rgba(46,204,113,0.1);color:#2ecc71;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
           🟢 SITE IS UP
         </button>
+      </div>
+    ` : "";
+
+    const gameAvailabilityHTML = isFounder ? `
+      <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
+        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:8px;">Games</label>
+        <button id="games-manage-toggle-btn" style="width:100%;padding:11px;border-radius:8px;border:1px solid rgba(255,215,0,0.5);background:rgba(255,215,0,0.08);color:#FFD700;font-family:'Cinzel',serif;font-weight:700;font-size:10.5px;letter-spacing:1.2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;line-height:1.3;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Make Games Unavailable or Available
+        </button>
+        <p style="font-family:'EB Garamond',serif;font-size:11px;color:#B8960C;opacity:0.65;margin-top:8px;line-height:1.5;">
+          While active, every game shows its status. Click any game to toggle it — you'll be asked for the message players see when it's unavailable.
+        </p>
       </div>
     ` : "";
 
@@ -1499,6 +1649,7 @@ function createGameButton(game) {
         </div>
       </div>
       ${siteStatusHTML}
+      ${gameAvailabilityHTML}
       <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
         <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:5px;">Global Announcement</label>
         <textarea id="admin-announce-input" placeholder="Type announcement…" maxlength="200" rows="3" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #2A2638;background:#0D0B12;color:#F0E6CA;font-family:'EB Garamond',serif;font-size:14px;outline:none;margin-bottom:8px;display:block;box-sizing:border-box;resize:none;"></textarea>
@@ -1573,6 +1724,30 @@ function createGameButton(game) {
         const isDown = snap.val() === true;
         await db.ref("siteStatus").set({ isDown: !isDown, updatedBy: me(), updatedAt: Date.now() });
       };
+
+      // FIX: Game availability manager only wired up for the owner
+      const gamesManageBtn = document.getElementById("games-manage-toggle-btn");
+      function updateGamesManageBtn() {
+        if (!gamesManageBtn) return;
+        if (window.__ns_gamesManageMode) {
+          gamesManageBtn.textContent = "🟡 Managing Games — Click to Finish";
+          gamesManageBtn.style.borderColor = "rgba(255,215,0,0.8)";
+          gamesManageBtn.style.background  = "rgba(255,215,0,0.18)";
+        } else {
+          gamesManageBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> Make Games Unavailable or Available`;
+          gamesManageBtn.style.borderColor = "rgba(255,215,0,0.5)";
+          gamesManageBtn.style.background  = "rgba(255,215,0,0.08)";
+        }
+      }
+      gamesManageBtn && (gamesManageBtn.onclick = () => {
+        window.__ns_gamesManageMode = !window.__ns_gamesManageMode;
+        updateGamesManageBtn();
+        showBanFeedback(
+          window.__ns_gamesManageMode ? "🟡 Game management mode ON — click a game to toggle it" : "✓ Game management mode off",
+          window.__ns_gamesManageMode ? "#FFD700" : "#2ecc71"
+        );
+        document.dispatchEvent(new CustomEvent("ns_game_availability_changed"));
+      });
     }
 
     // FIX: Announce button handler now correctly inside buildBanAdminPanel
