@@ -20,7 +20,8 @@ const games = [
   { name: "HexAsteal",            url: "https://r2ftzu1ha2vy-glitch.github.io/HexAsteal/",            category: "Puzzle",   image: "https://iili.io/BTGB19a.jpg" },
   { name: "8-Ball Billiards",     url: "https://r2ftzu1ha2vy-glitch.github.io/8-Ball-Billiards/",     category: "Sports",   image: "https://iili.io/B5KquAx.png" },
   { name: "Vaults",               url: "https://r2ftzu1ha2vy-glitch.github.io/Vaults/",               category: "Horror",   image: "https://iili.io/BsmUwTG.png" },
-  { name: "Digilock",             url: "https://r2ftzu1ha2vy-glitch.github.io/digilock/",           category: "Puzzle",     image: "https://iili.io/CUiqZlI.png" },
+  { name: "Digilock",             url: "https://r2ftzu1ha2vy-glitch.github.io/digilock/",             category: "Puzzle",   image: "https://iili.io/CUiqZlI.png" },
+  { name: "World Cup Drag",       url: "https://r2ftzu1ha2vy-glitch.github.io/World-Cup-Drag/",       category: "Puzzle",   image: "https://iili.io/CPjoWpS.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
