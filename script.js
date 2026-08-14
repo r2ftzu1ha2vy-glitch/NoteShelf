@@ -115,7 +115,7 @@ window.addEventListener("keydown", e => {
 });
 
 const newGameTrailers = [
-  { name: "Quizix", trailer: "https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Trailers/main/lv_0_20260423231300.mp4" },
+ // { name: "", trailer: "" },
 ];
 
 // =====================================
