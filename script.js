@@ -21,7 +21,8 @@ const games = [
   { name: "8-Ball Billiards",     url: "https://r2ftzu1ha2vy-glitch.github.io/8-Ball-Billiards/",     category: "Sports",   image: "https://iili.io/B5KquAx.png" },
   { name: "Vaults",               url: "https://r2ftzu1ha2vy-glitch.github.io/Vaults/",               category: "Horror",   image: "https://iili.io/BsmUwTG.png" },
   { name: "Digilock",             url: "https://r2ftzu1ha2vy-glitch.github.io/digilock/",             category: "Puzzle",   image: "https://iili.io/CUiqZlI.png" },
-  { name: "World Cup Drag",       url: "https://r2ftzu1ha2vy-glitch.github.io/World-Cup-Drag/",       category: "Puzzle",   image: "https://iili.io/CPjoWpS.png" },
+  { name: "World Cup Drag",       url: "https://r2ftzu1ha2vy-glitch.github.io/World-Cup-Drag/",       category: "Sports",   image: "https://iili.io/CPjoWpS.png" },
+  { name: "Where'd You Land?",    url: "https://r2ftzu1ha2vy-glitch.github.io/Whered-You-Land/",      category: "Puzzle",   image: "https://iili.io/CPsf2ff.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
@@ -65,7 +66,7 @@ const desktopGames = new Set([
 // =====================================
 // LOCKED GAMES (shown under their own "Locked Games" tab)
 // =====================================
-const lockedGamesTabList = new Set(["HexAsteal", "8-Ball Billiards", "Vaults"]);
+const lockedGamesTabList = new Set(["HexAsteal", "8-Ball Billiards", "Vaults", "Where'd You Land?"]);
 
 // =====================================
 // SVG ICONS for category sidebar
