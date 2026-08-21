@@ -23,6 +23,7 @@ const games = [
   { name: "Digilock",             url: "https://r2ftzu1ha2vy-glitch.github.io/digilock/",             category: "Puzzle",   image: "https://iili.io/CUiqZlI.png" },
   { name: "World Cup Drag",       url: "https://r2ftzu1ha2vy-glitch.github.io/World-Cup-Drag/",       category: "Sports",   image: "https://iili.io/CPjoWpS.png" },
   { name: "Where'd You Land?",    url: "https://r2ftzu1ha2vy-glitch.github.io/Whered-You-Land/",      category: "Puzzle",   image: "https://iili.io/CPsf2ff.png" },
+  { name: "Snake Stakes",         url: "https://gcode1879-arch.github.io/Snake-Stakes/",              category: "Timing",   image: "https://iili.io/CQQWzI1.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
