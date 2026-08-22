@@ -24,6 +24,7 @@ const games = [
   { name: "World Cup Drag",       url: "https://r2ftzu1ha2vy-glitch.github.io/World-Cup-Drag/",       category: "Sports",   image: "https://iili.io/CPjoWpS.png" },
   { name: "Where'd You Land?",    url: "https://r2ftzu1ha2vy-glitch.github.io/Whered-You-Land/",      category: "Puzzle",   image: "https://iili.io/CPsf2ff.png" },
   { name: "Snake Stakes",         url: "https://gcode1879-arch.github.io/Snake-Stakes/",              category: "Timing",   image: "https://iili.io/CQQWzI1.png" },
+  { name: "The Login Game",       url: "https://r2ftzu1ha2vy-glitch.github.io/The-Login-Game/",       category: "Annoying", image: "https://iili.io/CZ4Vu4a.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
@@ -34,7 +35,7 @@ const defaultImg = "https://iili.io/KUgv2G2.png";
 // Only the owner (username "BabyFounder" or this email) can toggle games
 // available/unavailable. Synced live via Firebase so every visitor sees it.
 const OWNER_USERNAME = "BabyFounder";
-const OWNER_EMAIL     = "babyfounder@noteshelf.gg"; // update to the real owner email if different
+const OWNER_EMAIL     = "r2ftzu1ha2vy@gmail.com"; // update to the real owner email if different
 
 function isSiteOwner(username, email) {
   if (username && username === OWNER_USERNAME) return true;
@@ -57,11 +58,11 @@ const freeGames = new Set([
 // =====================================
 const mobileGames = new Set([
   "Merger", "Shadow Boxing", "Highway Crash", "Tetricks", "Meme Rng",
-  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults", "Digilock"
+  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults", "Digilock, Snake Stakes, The Login Game"
 ]);
 const desktopGames = new Set([
   "Badminton Champion", "Build N Defend Tower", "Square Dodge", "RingBound",
-  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults", "Digilock"
+  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults", "Digilock, Snake Stakes, The Login Game"
 ]);
 
 // =====================================
@@ -3701,7 +3702,7 @@ const LEVEL_THRESHOLDS = [
 // Games unlocked per level (level = index+1, level 1 = always unlocked)
 const LEVEL_UNLOCKS = {
   5: ["HexAsteal", "8-Ball Billiards"],
-  6: ["Vaults"],
+  6: ["Vaults", "Where'd You Land?"],
 };
 
 function xpForLevel(lvl) { return LEVEL_THRESHOLDS[Math.min(lvl - 1, LEVEL_THRESHOLDS.length - 1)] || 0; }
