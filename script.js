@@ -440,17 +440,40 @@ const nsfwExempt  = new Set(["BabyFounder", "Number1"]);
 // =====================================
 // PROFANITY FILTER
 // =====================================
+// FIX: '&' and '%' were mapping to whole words ("and"/"percent") — spliced into
+// the middle of a message this corrupts the normalised string instead of
+// decoding a censor symbol (there's no standard leet reading of & or % as a
+// letter), so those two are dropped and left to separatorPattern to strip.
+// @ ! $ + keep their standard, widely-recognised single-letter leet meanings.
 const leetMap = {
   '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '6': 'g',
-  '7': 't', '8': 'b', '9': 'g', '@': 'a', '$': 's', '!': 'i',
-  '+': 't', '#': 'h', '&': 'and', '%': 'percent',
+  '7': 't', '8': 'b', '9': 'g', '@': 'a', '$': 's', '!': 'i', '+': 't',
   'ph': 'f',
 };
-const separatorPattern = /[\s.\-_*|\/\\,;:~`^'"!?+@#$%&()[\]{}<>]/g;
+
+// FIX: homoglyph map — catches Cyrillic/Greek/fullwidth lookalikes people use
+// to dodge a plain-ASCII filter (e.g. "а" U+0430 Cyrillic instead of "a").
+const homoglyphMap = {
+  'а':'a','А':'a','е':'e','Е':'e','о':'o','О':'o','р':'p','Р':'p','с':'c','С':'c',
+  'х':'x','Х':'x','у':'y','У':'y','і':'i','І':'i','ѕ':'s','Ѕ':'s','к':'k','К':'k',
+  'ｆ':'f','ｕ':'u','ｃ':'c','ｋ':'k','ｓ':'s','ｈ':'h','ｉ':'i','ｔ':'t','ｎ':'n',
+  'ⓕ':'f','ⓤ':'u','ⓒ':'c','ⓚ':'k','ⓢ':'s','ⓗ':'h','ⓘ':'i','ⓣ':'t',
+};
+
+// Strips zero-width / invisible characters people insert between letters
+// (e.g. "f\u200Bu\u200Bc\u200Bk") so they can't hide a word inside one message.
+const invisibleCharPattern = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/g;
+
+const separatorPattern = /[\s.\-_*|\/\\,;:~`^'"!?+@#$%&()[\]{}<>=]/g;
 
 function normalise(text) {
   if (!text) return "";
-  let s = text.toLowerCase();
+  let s = String(text);
+  // Unicode-normalise first so accented / combining-mark tricks collapse to base letters.
+  try { s = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, ""); } catch (_) {}
+  s = s.replace(invisibleCharPattern, '');
+  s = s.toLowerCase();
+  s = s.split('').map(c => homoglyphMap[c] || c).join('');
   s = s.replace(/ph/g, 'f');
   s = s.split('').map(c => leetMap[c] || c).join('');
   const stripped  = s.replace(separatorPattern, '');
@@ -474,11 +497,70 @@ const badWords = [
   "methhead","heroin","cocaine","meth","weed","stoned","druggie",
 ];
 
-const normalisedBadWords = badWords.map(w => normalise(w));
+const normalisedBadWords = badWords.map(w => normalise(w)).filter(Boolean);
+
+function textContainsBadWord(normalisedText) {
+  return normalisedBadWords.some(bw => normalisedText.includes(bw));
+}
 
 function containsBadWord(text) {
-  const norm = normalise(text);
-  return normalisedBadWords.some(bw => norm.includes(bw));
+  return textContainsBadWord(normalise(text));
+}
+
+// =====================================
+// SPAM-SPELLED-OUT BYPASS DETECTION
+// ("f" ⏎ "u" ⏎ "c" ⏎ "k" sent as separate messages/DMs)
+//
+// Keeps a short rolling buffer per user, per conversation, of their most
+// recent *short* messages. If the concatenation of that buffer contains a
+// bad word, the whole run gets scrubbed retroactively — not just the
+// message that completed the word.
+// =====================================
+const FRAGMENT_WINDOW_MS   = 20000; // how long a fragment stays "live"
+const FRAGMENT_MAX_LEN     = 4;     // normalised length that counts as a "fragment"
+const FRAGMENT_BUFFER_SIZE = 25;    // how many fragments we remember per stream
+
+const fragmentBuffers = new Map(); // streamKey -> [{ normalised, cleanup }]
+
+function pruneFragmentBuffer(buf, now) {
+  while (buf.length && now - buf[0].time > FRAGMENT_WINDOW_MS) buf.shift();
+}
+
+// streamKey: a string identifying "this user, in this chat/DM thread".
+// cleanup: async fn() that scrubs the message tied to this fragment in the DB.
+// Returns true if this fragment, combined with recent ones, completes a bad word —
+// in which case every fragment in the run (including this one) has been scrubbed.
+function checkFragmentBypass(streamKey, rawText, cleanupFn) {
+  const norm = normalise(rawText);
+  if (!norm) return false;
+
+  const now = Date.now();
+  let buf = fragmentBuffers.get(streamKey);
+  if (!buf) { buf = []; fragmentBuffers.set(streamKey, buf); }
+  pruneFragmentBuffer(buf, now);
+
+  // Only messages that are short once normalised count as "spelling out" fragments —
+  // this keeps normal short words like "ok" / "no" / "gg" from tripping cross-message
+  // checks against unrelated future fragments, since single fragments alone still have
+  // to combine into an actual bad word to trigger anything.
+  const isFragment = norm.length > 0 && norm.length <= FRAGMENT_MAX_LEN;
+  if (!isFragment) return false;
+
+  buf.push({ time: now, normalised: norm, cleanup: cleanupFn });
+  if (buf.length > FRAGMENT_BUFFER_SIZE) buf.shift();
+
+  // Check every suffix window of the buffer (not just the full thing) so a word
+  // that started a few "junk" fragments in still gets caught.
+  for (let start = 0; start < buf.length; start++) {
+    const combined = buf.slice(start).map(f => f.normalised).join('');
+    if (textContainsBadWord(combined)) {
+      const hitRun = buf.slice(start);
+      hitRun.forEach(f => { try { f.cleanup && f.cleanup(); } catch (_) {} });
+      fragmentBuffers.set(streamKey, []); // reset the stream after a catch
+      return true;
+    }
+  }
+  return false;
 }
 
 function filterMessage(text) {
@@ -488,8 +570,9 @@ function filterMessage(text) {
 }
 
 // =====================================
-// NSFW IMAGE DETECTION
+// NSFW IMAGE HANDLING
 // =====================================
+// Known bad domains/paths get blocked outright — no ambiguity there.
 const nsfwDomainPatterns = [
   /pornhub/i, /xvideos/i, /xnxx/i, /xhamster/i, /redtube/i,
   /youporn/i, /rule34/i, /gelbooru/i, /danbooru/i, /nhentai/i,
@@ -512,13 +595,36 @@ function isNsfwUrl(url) {
   } catch { return false; }
 }
 
+// A script can't actually look at the pixels of an arbitrary linked image, so
+// instead of pretending a URL-pattern check is real image analysis: known-bad
+// domains are blocked instantly, and everything else gets queued for BabyFounder
+// (or another chat admin) to eyeball in the Image Review panel. The message still
+// sends (so normal images aren't held up), but it's flagged until reviewed.
 async function isNsfwImage(url) {
-  if (isNsfwUrl(url)) return true;
-  return false;
+  return isNsfwUrl(url);
 }
 
 function nsfwExemptUser(username) {
   return username && nsfwExempt.has(username);
+}
+
+// context: e.g. "global", "dm:<convoId>", or "avatar" — used so reviewers know where to look.
+// dbPath: full path to the message/user node, so a reviewer can pull it up / remove it.
+// Also stamps reviewStatus:"pending" onto the node itself so renderers (chat bubbles,
+// profile UI) can react live without a second query.
+function flagImageForReview(context, dbPath, url, user) {
+  try {
+    db.ref("imageReviewQueue").push({
+      context, dbPath, url, user,
+      time: Date.now(),
+      status: "pending",
+    });
+    if (context === "avatar") {
+      db.ref(dbPath).parent.update({ avatarPendingReview: true });
+    } else {
+      db.ref(dbPath).update({ reviewStatus: "pending" });
+    }
+  } catch (_) { /* best-effort — never block sending on this */ }
 }
 
 // =====================================
@@ -528,10 +634,30 @@ function isImageUrl(text) {
   return /^https?:\/\/.+\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test((text || "").trim());
 }
 
-function buildMessageContent(text) {
+// isMe: whether the viewer is the sender of this message (controls the review copy).
+// reviewStatus: undefined/"approved" -> render normally; "pending" -> hold the image back.
+function buildMessageContent(text, isMe, reviewStatus) {
   if (isImageUrl(text)) {
     const wrap = document.createElement("div");
+    wrap.className = "chat-image-wrap"; // FIX: lets edit/scrub listeners find & replace this reliably
     wrap.style.cssText = "margin-top:4px;";
+
+    if (reviewStatus === "pending") {
+      const hold = document.createElement("div");
+      hold.className = "chat-image-pending";
+      hold.style.cssText = [
+        "display:flex","align-items:center","gap:8px","padding:10px 14px",
+        "border:1px dashed rgba(184,150,12,0.5)","border-radius:10px",
+        "background:rgba(255,215,0,0.05)","font-family:'Cinzel',serif",
+        "font-size:10px","letter-spacing:0.5px","color:#B8960C","max-width:200px",
+      ].join(";");
+      hold.innerHTML = isMe
+        ? `⏳ <span>Your Image Is In Review</span>`
+        : `⏳ <span>Image pending review</span>`;
+      wrap.appendChild(hold);
+      return wrap;
+    }
+
     const img = document.createElement("img");
     img.src = text.trim(); img.alt = "Image";
     img.style.cssText = [
@@ -1291,12 +1417,14 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
           isAdmin:       adminUsers.includes(username),
           isBanAdmin:    banAdminUsers.has(username),
           avatar:        pendingAvatarB64,
+          avatarPendingReview: !!pendingAvatarB64, // FIX: hold new profile photos for review
           createdAt:     Date.now(),
           email:         email,
           firebaseUid:   fbUser.uid,
           emailVerified: false,
         };
         await userRef.set(newUser);
+        if (pendingAvatarB64) flagImageForReview("avatar", "users/" + username + "/avatar", pendingAvatarB64, username);
         authPopup.style.display = "none";
         authSubmit.disabled = false;
         setSession(username, pendingAvatarB64, false, fbUser.uid);
@@ -1601,6 +1729,19 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
       </div>
     ` : "";
 
+    // FIX: image review queue — only BabyFounder (or a future founder-check) gets this,
+    // since it's where flagged images actually get looked at and actioned.
+    const imageReviewHTML = isFounder ? `
+      <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
+        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:8px;">
+          Image Review Queue <span id="image-review-count" style="color:#ff6b6b;"></span>
+        </label>
+        <div id="image-review-list" style="display:flex;flex-direction:column;gap:10px;max-height:340px;overflow-y:auto;">
+          <p style="font-family:'EB Garamond',serif;font-size:12px;color:#B8960C;opacity:0.6;">Nothing pending.</p>
+        </div>
+      </div>
+    ` : "";
+
     const gameAvailabilityHTML = isFounder ? `
       <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
         <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:8px;">Games</label>
@@ -1652,6 +1793,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
         </div>
       </div>
       ${siteStatusHTML}
+      ${imageReviewHTML}
       ${gameAvailabilityHTML}
       <div style="border-top:1px solid #2A2638;padding-top:14px;margin-top:14px;">
         <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:5px;">Global Announcement</label>
@@ -1660,12 +1802,33 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
           Send Announcement
         </button>
-        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:5px;">Play Event</label>
-        <textarea id="admin-event-input" placeholder="Describe event…" maxlength="200" rows="3" style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #2A2638;background:#0D0B12;color:#F0E6CA;font-family:'EB Garamond',serif;font-size:14px;outline:none;margin-bottom:8px;display:block;box-sizing:border-box;resize:none;"></textarea>
-        <button id="admin-event-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#FF6B35,#E05A20);border:none;border-radius:8px;color:#fff;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-          Play Event
-        </button>
+        <label style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.75;display:block;margin-bottom:8px;">Play Event</label>
+        <div id="admin-event-buttons" style="display:flex;flex-direction:column;gap:8px;">
+          <button class="admin-event-choice-btn" data-event="nyan" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;text-align:left;">Nyan Cat</span>
+          </button>
+          <button class="admin-event-choice-btn" data-event="oiia" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;text-align:left;">Oiia Cat</span>
+          </button>
+          <button class="admin-event-choice-btn" data-event="coin rain" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;text-align:left;">Coin Rain</span>
+          </button>
+          <button class="admin-event-choice-btn" data-event="fireworks" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;text-align:left;">Fireworks</span>
+          </button>
+          <button class="admin-event-choice-btn" data-event="whack a mole" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;text-align:left;">Whack-a-Mole</span>
+          </button>
+          <button class="admin-event-choice-btn" data-event="disco" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;text-align:left;">Disco Party</span>
+          </button>
+          <button class="admin-event-choice-btn" data-event="merger" style="width:100%;padding:9px 12px;background:#0D0B12;border:1px solid #2A2638;border-radius:8px;color:#F0E6CA;font-family:'Cinzel',serif;font-weight:700;font-size:11px;letter-spacing:1.5px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+            <img src="https://iili.io/n2dChaR.png" alt="" style="width:20px;height:20px;object-fit:contain;flex-shrink:0;">
+            <span style="flex:1;text-align:left;">Merger</span>
+            <span style="font-size:9px;letter-spacing:1px;color:#B8960C;border:1px solid rgba(184,150,12,0.5);border-radius:10px;padding:2px 8px;">CLASSIC</span>
+          </button>
+        </div>
+
       </div>
       <div id="ban-feedback" style="margin-top:12px;font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;min-height:20px;"></div>
     `;
@@ -1751,6 +1914,93 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
         );
         document.dispatchEvent(new CustomEvent("ns_game_availability_changed"));
       });
+
+      // FIX: Image Review Queue — live list of images that only cleared the domain
+      // blocklist, not an actual "this is safe" check. BabyFounder reviews and actions each.
+      const imageReviewList  = document.getElementById("image-review-list");
+      const imageReviewCount = document.getElementById("image-review-count");
+
+      function renderImageReviewCard(key, entry) {
+        const card = document.createElement("div");
+        card.dataset.reviewKey = key;
+        card.style.cssText = "border:1px solid #2A2638;border-radius:8px;padding:8px;background:#0D0B12;";
+        const meta = document.createElement("div");
+        meta.style.cssText = "font-family:'EB Garamond',serif;font-size:11px;color:#F0E6CA;margin-bottom:6px;word-break:break-word;";
+        meta.innerHTML = `<b style="color:#FFD700;">${entry.user || "unknown"}</b> — ${entry.context || ""}<br><span style="opacity:0.6;">${new Date(entry.time || 0).toLocaleString()}</span>`;
+        card.appendChild(meta);
+
+        const img = document.createElement("img");
+        img.src = entry.url; img.alt = "flagged image";
+        img.style.cssText = "max-width:100%;max-height:160px;border-radius:6px;display:block;margin-bottom:8px;object-fit:contain;background:#000;";
+        img.onerror = () => { img.replaceWith(Object.assign(document.createElement("div"), { textContent: "(image failed to load)", style: "font-size:11px;color:#B8960C;margin-bottom:8px;" })); };
+        card.appendChild(img);
+
+        const btnRow = document.createElement("div");
+        btnRow.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
+
+        const isAvatar = entry.context === "avatar";
+
+        const approveBtn = document.createElement("button");
+        approveBtn.textContent = "✓ Approve";
+        approveBtn.style.cssText = "flex:1;padding:7px;border-radius:6px;border:1px solid rgba(46,204,113,0.5);background:rgba(46,204,113,0.1);color:#2ecc71;font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;cursor:pointer;";
+        approveBtn.onclick = async () => {
+          // FIX: clear the hold on the actual node so it live-releases for
+          // everyone watching (chat image reveals, avatar stops being pending).
+          if (isAvatar) {
+            if (entry.dbPath) await db.ref(entry.dbPath).parent.update({ avatarPendingReview: false });
+          } else if (entry.dbPath) {
+            await db.ref(entry.dbPath).update({ reviewStatus: "approved" });
+          }
+          await db.ref("imageReviewQueue/" + key).update({ status: "approved", reviewedBy: me(), reviewedAt: Date.now() });
+        };
+
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = isAvatar ? "🗑 Remove Photo" : "🗑 Remove Image";
+        removeBtn.style.cssText = "flex:1;padding:7px;border-radius:6px;border:1px solid rgba(255,107,107,0.5);background:rgba(255,107,107,0.1);color:#ff6b6b;font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;cursor:pointer;";
+        removeBtn.onclick = async () => {
+          if (isAvatar) {
+            if (entry.dbPath) await db.ref(entry.dbPath).parent.update({ avatar: "", avatarPendingReview: false });
+          } else if (entry.dbPath) {
+            await db.ref(entry.dbPath).update({ text: "[image removed by moderator]", reviewStatus: "removed" });
+          }
+          await db.ref("imageReviewQueue/" + key).update({ status: "removed", reviewedBy: me(), reviewedAt: Date.now() });
+        };
+
+        const banBtn = document.createElement("button");
+        banBtn.textContent = "⛔ Remove + Ban 24h";
+        banBtn.style.cssText = "flex:1 1 100%;padding:7px;border-radius:6px;border:1px solid rgba(255,107,107,0.5);background:rgba(255,107,107,0.05);color:#ff6b6b;font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;cursor:pointer;";
+        banBtn.onclick = async () => {
+          if (!entry.user || entry.user === "BabyFounder" || adminUsers.includes(entry.user)) {
+            showBanFeedback("❌ Cannot ban that user", "#ff6b6b"); return;
+          }
+          if (isAvatar) {
+            if (entry.dbPath) await db.ref(entry.dbPath).parent.update({ avatar: "", avatarPendingReview: false });
+          } else if (entry.dbPath) {
+            await db.ref(entry.dbPath).update({ text: "[image removed by moderator]", reviewStatus: "removed" });
+          }
+          await db.ref("bans/" + entry.user).set({ reason: "NSFW image", until: Date.now() + 86400000, bannedBy: me(), bannedAt: Date.now() });
+          await db.ref("imageReviewQueue/" + key).update({ status: "removed", reviewedBy: me(), reviewedAt: Date.now() });
+          showBanFeedback(`✓ Removed image & banned ${entry.user} for 24h`, "#2ecc71");
+        };
+
+        btnRow.appendChild(approveBtn); btnRow.appendChild(removeBtn); btnRow.appendChild(banBtn);
+        card.appendChild(btnRow);
+        return card;
+      }
+
+      db.ref("imageReviewQueue").orderByChild("status").equalTo("pending").on("value", snap => {
+        const entries = [];
+        snap.forEach(child => entries.push([child.key, child.val()]));
+        entries.sort((a, b) => (b[1].time || 0) - (a[1].time || 0));
+
+        imageReviewList.innerHTML = "";
+        if (!entries.length) {
+          imageReviewList.innerHTML = `<p style="font-family:'EB Garamond',serif;font-size:12px;color:#B8960C;opacity:0.6;">Nothing pending.</p>`;
+        } else {
+          entries.forEach(([key, entry]) => imageReviewList.appendChild(renderImageReviewCard(key, entry)));
+        }
+        imageReviewCount.textContent = entries.length ? `(${entries.length})` : "";
+      });
     }
 
     // FIX: Announce button handler now correctly inside buildBanAdminPanel
@@ -1768,20 +2018,20 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
       showBanFeedback("✓ Announcement sent", "#2ecc71");
     };
 
-    // FIX: Event button handler now correctly inside buildBanAdminPanel
-    document.getElementById("admin-event-btn").onclick = async () => {
-      const text = document.getElementById("admin-event-input").value.trim();
-      if (!text) { showBanFeedback("❌ Enter event details", "#ff6b6b"); return; }
-      await db.ref("admin_broadcasts").push({
-        type: "event",
-        text,
-        sentBy: me(),
-        avatar: myAvatar(),
-        sentAt: Date.now(),
-      });
-      document.getElementById("admin-event-input").value = "";
-      showBanFeedback("✓ Event played", "#2ecc71");
-    };
+    // FIX: Event buttons — one click per event, no more typing event text in a box.
+    document.querySelectorAll(".admin-event-choice-btn").forEach(btn => {
+      btn.onclick = async () => {
+        const eventKey = btn.dataset.event;
+        await db.ref("admin_broadcasts").push({
+          type: "event",
+          text: eventKey,
+          sentBy: me(),
+          avatar: myAvatar(),
+          sentAt: Date.now(),
+        });
+        showBanFeedback("✓ Event played", "#2ecc71");
+      };
+    });
   }
 
 }); // end DOMContentLoaded
@@ -2055,7 +2305,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
     const bubble = document.createElement("div");
     bubble.className = "chat-bubble";
 
-    bubble.appendChild(buildMessageContent(data.text));
+    bubble.appendChild(buildMessageContent(data.text, isMe, data.reviewStatus));
 
     if (data.edited) {
       const etag = document.createElement("span");
@@ -2144,7 +2394,8 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
     let msg = chatInput.value.trim();
     if (!msg) return;
 
-    if (isImageUrl(msg) && !nsfwExemptUser(user)) {
+    let isImage = isImageUrl(msg) && !nsfwExemptUser(user);
+    if (isImage) {
       const nsfw = await isNsfwImage(msg);
       if (nsfw) {
         chatInput.value = "";
@@ -2165,7 +2416,21 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
       payload.replyTo = { key: replyingTo.key, user: replyingTo.user, text: (replyingTo.text || "").slice(0, 100) };
     }
 
-    db.ref("messages").push(payload);
+    const pushedRef = db.ref("messages").push(payload);
+    const msgKey = pushedRef.key;
+
+    // FIX: image not caught by the domain blocklist still isn't proven safe —
+    // queue it for BabyFounder / chat admins to actually look at.
+    if (isImage) flagImageForReview("global", "messages/" + msgKey, msg, user);
+
+    // FIX: catch someone spelling a bad word out one message at a time.
+    if (!containsBadWord(msg)) {
+      const bypassed = checkFragmentBypass("global:" + user, msg, () => {
+        db.ref("messages/" + msgKey).update({ text: "[message removed]" });
+      });
+      if (bypassed) db.ref("messages/" + msgKey).update({ text: "[message removed]" });
+    }
+
     chatInput.value = "";
     chatCharCount.textContent = "300";
     typingRef.child(user).remove();
@@ -2203,8 +2468,15 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
     const existing = chatMessages.querySelector(`[data-msg-key="${snap.key}"]`);
     if (!existing) return;
     const data = snap.val();
-    const textEl = existing.querySelector(".chat-text");
-    if (textEl) textEl.textContent = data.text || "";
+    const bubble = existing.querySelector(".chat-bubble");
+    // FIX: replace the whole content node (not just .chat-text) so moderation
+    // actions that turn an image into "[message removed]" (or an approval that
+    // releases a pending image) actually show up live.
+    const oldContent = bubble && bubble.querySelector(".chat-text, .chat-image-wrap");
+    if (bubble && oldContent) {
+      const isMe = data.user === (me() || "Guest");
+      bubble.replaceChild(buildMessageContent(data.text || "", isMe, data.reviewStatus), oldContent);
+    }
     const etag = existing.querySelector(".chat-edited-tag");
     if (data.edited && !etag) {
       const newTag = document.createElement("span");
@@ -2244,6 +2516,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
   let dmUnreadByUser    = {};
   let dmMsgListener     = null;
   let dmMsgListenerRef  = null;
+  let dmMsgChangedListener = null; // FIX: tracks live-edit/scrub listener for the open DM
   let dmTypingListener  = null;
   let dmTypingListRef   = null;
   let dmTypingTimer     = null;
@@ -2492,7 +2765,12 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
   function openConversation(friend) {
     activeFriend  = friend;
     activeConvoId = convoId(me(), friend);
-    if (dmMsgListenerRef && dmMsgListener) { dmMsgListenerRef.off("child_added", dmMsgListener); dmMsgListener = null; dmMsgListenerRef = null; }
+    // FIX: detach both listeners off the *old* ref before it gets replaced below.
+    if (dmMsgListenerRef) {
+      if (dmMsgListener) dmMsgListenerRef.off("child_added", dmMsgListener);
+      if (dmMsgChangedListener) dmMsgListenerRef.off("child_changed", dmMsgChangedListener);
+    }
+    dmMsgListener = null; dmMsgChangedListener = null; dmMsgListenerRef = null;
     if (dmTypingListRef && dmTypingListener) { dmTypingListRef.off("value", dmTypingListener); dmTypingListener = null; dmTypingListRef = null; }
     dmUnreadByUser[friend] = 0; refreshUnreadBadge();
     dmNoConvo.style.display = "none"; dmConvo.style.display = "flex";
@@ -2510,6 +2788,20 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
       dmMessages.scrollTop = dmMessages.scrollHeight;
     });
 
+    // FIX: live-reflect edits and retroactive filter scrubs (e.g. spelled-out bypass catches)
+    // on messages already rendered in this conversation.
+    dmMsgChangedListener = messagesRef.on("child_changed", snap => {
+      const row = Array.from(dmMessages.children).find(r => r.dataset && r.dataset.dmKey === snap.key);
+      const data = snap.val();
+      if (!row) return;
+      const bubble = row.querySelector(".chat-bubble");
+      const oldContent = bubble && bubble.querySelector(".chat-text, .chat-image-wrap");
+      if (bubble && oldContent) {
+        const isMe = data.sender === me();
+        bubble.replaceChild(buildMessageContent(data.text || "", isMe, data.reviewStatus), oldContent);
+      }
+    });
+
     if (friend !== me()) {
       dmTypingListRef  = db.ref("dm_typing/" + activeConvoId + "/" + friend);
       dmTypingListener = dmTypingListRef.on("value", snap => {
@@ -2522,7 +2814,9 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
   }
 
   function closeConversation() {
-    if (dmMsgListenerRef && dmMsgListener) { dmMsgListenerRef.off("child_added", dmMsgListener); dmMsgListener = null; dmMsgListenerRef = null; }
+    if (dmMsgListenerRef && dmMsgListener) { dmMsgListenerRef.off("child_added", dmMsgListener); dmMsgListener = null; }
+    if (dmMsgListenerRef && dmMsgChangedListener) { dmMsgListenerRef.off("child_changed", dmMsgChangedListener); dmMsgChangedListener = null; }
+    dmMsgListenerRef = null;
     if (dmTypingListRef && dmTypingListener) { dmTypingListRef.off("value", dmTypingListener); dmTypingListener = null; dmTypingListRef = null; }
     activeFriend = null; activeConvoId = null;
     dmNoConvo.style.display = "flex"; dmConvo.style.display = "none";
@@ -2534,6 +2828,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
   function appendDMMessage(data, key) {
     const user = me(), isMe = data.sender === user;
     const row  = document.createElement("div"); row.classList.add("chat-row", isMe ? "me" : "other");
+    row.dataset.dmKey = key; // FIX: lets the child_changed listener find this row later
     const avatarEl = buildAvatarEl(data.sender, data.avatar || "", 28);
     const group    = document.createElement("div"); group.className = "chat-bubble-group";
     if (!isMe) {
@@ -2541,7 +2836,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
       group.appendChild(sender);
     }
     const bubble = document.createElement("div"); bubble.className = "chat-bubble";
-    bubble.appendChild(buildMessageContent(data.text));
+    bubble.appendChild(buildMessageContent(data.text, isMe, data.reviewStatus));
 
     if (isMe) {
       const actions = document.createElement("div"); actions.className = "chat-toolbar toolbar-left";
@@ -2578,12 +2873,26 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
     if (!activeFriend || !activeConvoId) return;
     const text = dmInput.value.trim();
     if (!text) return;
-    if (isImageUrl(text) && !nsfwExemptUser(user)) {
+    const isImage = isImageUrl(text) && !nsfwExemptUser(user);
+    if (isImage) {
       const nsfw = await isNsfwImage(text);
       if (nsfw) { dmInput.value = ""; showToast("⚠ NSFW images are not allowed"); return; }
     }
     const clean = filterMessage(text);
-    db.ref("dms/" + activeConvoId + "/messages").push({ sender: user, avatar: myAvatar(), text: clean, time: Date.now() });
+    const pushedRef = db.ref("dms/" + activeConvoId + "/messages").push({ sender: user, avatar: myAvatar(), text: clean, time: Date.now() });
+    const msgKey = pushedRef.key;
+
+    // FIX: image that passed the domain blocklist still isn't proven safe — queue for review.
+    if (isImage) flagImageForReview("dm:" + activeConvoId, "dms/" + activeConvoId + "/messages/" + msgKey, clean, user);
+
+    // FIX: catch someone spelling a bad word out one DM at a time.
+    if (!containsBadWord(clean)) {
+      const bypassed = checkFragmentBypass("dm:" + activeConvoId + ":" + user, clean, () => {
+        db.ref("dms/" + activeConvoId + "/messages/" + msgKey).update({ text: "[message removed]" });
+      });
+      if (bypassed) db.ref("dms/" + activeConvoId + "/messages/" + msgKey).update({ text: "[message removed]" });
+    }
+
     if (activeFriend !== user) db.ref("dm_typing/" + activeConvoId + "/" + user).remove();
     clearTimeout(dmTypingTimer);
     dmInput.value = "";
@@ -2669,6 +2978,22 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
   window.addEventListener("ns_logout", () => { editBtn.style.display = "none"; });
   if (me()) editBtn.style.display = "inline-flex";
 
+  function renderAvatarReviewNotice(pending) {
+    let notice = document.getElementById("ep-avatar-review-notice");
+    if (pending) {
+      if (!notice) {
+        notice = document.createElement("div");
+        notice.id = "ep-avatar-review-notice";
+        notice.style.cssText = "margin-top:6px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:0.5px;color:#B8960C;display:flex;align-items:center;gap:6px;";
+        notice.innerHTML = `⏳ <span>Your Image Is In Review</span>`;
+        epAvatarPrev.insertAdjacentElement("afterend", notice);
+      }
+      notice.style.display = "flex";
+    } else if (notice) {
+      notice.style.display = "none";
+    }
+  }
+
   editBtn.onclick = async () => {
     const user = me(); if (!user) return;
     epUsername.textContent = user;
@@ -2681,6 +3006,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
     epEmail.value = data.email || "";
     if (data.avatar) { epAvatarPrev.src = data.avatar; epAvatarPrev.style.display = "block"; }
     else { epAvatarPrev.style.display = "none"; }
+    renderAvatarReviewNotice(!!data.avatarPendingReview);
     if (data.email) {
       epEmailStat.style.color = data.emailVerified ? "#2ecc71" : "var(--gold-dim)";
       epEmailStat.textContent = data.emailVerified ? "✓ Verified" : "✗ Not verified";
@@ -2694,7 +3020,10 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
   epAvatarIn.addEventListener("change", e => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { newAvatarB64 = reader.result; epAvatarPrev.src = newAvatarB64; epAvatarPrev.style.display = "block"; };
+    reader.onload = () => {
+      newAvatarB64 = reader.result; epAvatarPrev.src = newAvatarB64; epAvatarPrev.style.display = "block";
+      renderAvatarReviewNotice(false); // FIX: don't claim "in review" until it's actually saved & flagged
+    };
     reader.readAsDataURL(file);
   });
 
@@ -2745,11 +3074,14 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
         if (currentFbUser) await currentFbUser.updatePassword(newPassword);
         updates.passwordHash = (function simpleHash(str) { let h=0; for(let i=0;i<str.length;i++) h=(Math.imul(31,h)+str.charCodeAt(i))|0; return h.toString(36); })(newPassword);
       }
+      if (newAvatarB64) updates.avatarPendingReview = true; // FIX: hold new/updated profile photos for review
       if (Object.keys(updates).length) await db.ref("users/" + user).update(updates);
       if (newAvatarB64) {
+        flagImageForReview("avatar", "users/" + user + "/avatar", newAvatarB64, user);
         setSession(user, newAvatarB64, _emailVerified, _firebaseUid);
         const avatarEl = document.getElementById("user-avatar");
         if (avatarEl) { avatarEl.src = newAvatarB64; avatarEl.style.display = "inline-block"; }
+        renderAvatarReviewNotice(true);
       }
       if (newEmail && newEmail !== data.email) {
         epEmailStat.style.color = "var(--gold-dim)";
@@ -2930,46 +3262,44 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   document.body.appendChild(stack);
 
-  // ── Shared audio helpers ──
-  let _audioCtx = null;
-  function getAC() { if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return _audioCtx; }
-  function tone(freq, type, dur, vol, delay) {
-    try {
-      const ac = getAC(), osc = ac.createOscillator(), g = ac.createGain();
-      osc.connect(g); g.connect(ac.destination);
-      osc.type = type || 'sine';
-      osc.frequency.setValueAtTime(freq, ac.currentTime + (delay || 0));
-      g.gain.setValueAtTime(vol || 0.15, ac.currentTime + (delay || 0));
-      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + (delay || 0) + dur);
-      osc.start(ac.currentTime + (delay || 0));
-      osc.stop(ac.currentTime + (delay || 0) + dur);
-    } catch(_) {}
+  // ── Per-event MP3 audio ──
+  // Fill in a URL for any event to give it real audio; leave "" for silence (no fallback tones).
+  const eventAudioSrc = {
+    nyan: "",
+    oiia: "",
+    coinRain: "",
+    fireworks: "",
+    whackHit: "",
+    whackMiss: "",
+    disco: "",
+    levelUp: "",
+    merger: "https://raw.githubusercontent.com/r2ftzu1ha2vy-glitch/Merger/main/c7c6ae00-6a21-43aa-8ac4-fbb2208ff49f.mp3",
+  };
+  const _eventAudioCache = {};
+  function playEventSound(key) {
+    const src = eventAudioSrc[key];
+    if (!src) return null; // no mp3 assigned -> silence, no synthesized fallback
+    let audio = _eventAudioCache[key];
+    if (!audio) { audio = new Audio(src); _eventAudioCache[key] = audio; }
+    audio.currentTime = 0;
+    audio.volume = 1;
+    audio.play().catch(() => {});
+    return audio;
   }
-  function sndCoin()     { tone(880,'sine',0.09,0.18); tone(1320,'sine',0.07,0.14,0.07); }
-  function sndCollect()  { [0,0.06,0.12].forEach((d,i) => tone(660+i*220,'sine',0.10,0.15,d)); }
-  function sndClick()    { tone(440,'sine',0.06,0.12); tone(660,'sine',0.06,0.12,0.05); }
-  function sndWhack()    { tone(220,'square',0.12,0.2); tone(150,'square',0.10,0.18,0.08); }
-  function sndMiss()     { tone(180,'sawtooth',0.10,0.12); }
-  function sndLevelUp()  { [440,550,660,880].forEach((f,i) => tone(f,'sine',0.10,0.14,i*0.10)); }
-  function sndFirework() { tone(800,'sine',0.06,0.18); tone(400,'sine',0.14,0.15,0.06); tone(200,'sawtooth',0.18,0.12,0.14); }
-  function sndDisco()    { [330,440,550,440].forEach((f,i) => tone(f,'square',0.07,0.08,i*0.12)); }
-  function sndNyanNote(freq, delay) { tone(freq,'square',0.09,0.10,delay); }
+  function fadeOutEventSound(audio, duration) {
+    if (!audio) return;
+    const dur = duration || 500;
+    const startVol = audio.volume;
+    const startTime = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - startTime) / dur);
+      audio.volume = startVol * (1 - t);
+      if (t < 1) requestAnimationFrame(step);
+      else { audio.pause(); audio.currentTime = 0; }
+    };
+    requestAnimationFrame(step);
+  }
 
-  // Nyan Cat melody loop (simplified)
-  let _nyanMelodyTimer = null;
-  function startNyanMelody() {
-    const notes = [659,784,659,523,587,659,523,440,494,523,440,349,392,440,349,
-                   294,330,349,294,247,262,294,247,208,220,247,208,175];
-    let i = 0;
-    function playNext() {
-      if (!_nyanMelodyTimer) return;
-      sndNyanNote(notes[i % notes.length], 0);
-      i++;
-      _nyanMelodyTimer = setTimeout(playNext, 160);
-    }
-    _nyanMelodyTimer = setTimeout(playNext, 0);
-  }
-  function stopNyanMelody() { clearTimeout(_nyanMelodyTimer); _nyanMelodyTimer = null; }
 
   // ── Shared CSS injected once ──
   if (!document.getElementById('event-shared-styles')) {
@@ -3075,7 +3405,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── EVENT DISPATCHER ──
   function playEventOverlay(text) {
     const t = (text || '').toLowerCase();
-    if (t.includes('nyan'))        playNyanEvent();
+    if (t.includes('merger'))      playMergerEvent();
+    else if (t.includes('nyan'))   playNyanEvent();
     else if (t.includes('oiia') || t.includes('cat')) playOiiaEvent();
     else if (t.includes('coin') || t.includes('rain')) playCoinRainEvent();
     else if (t.includes('firework') || t.includes('celebrat')) playFireworksEvent();
@@ -3126,7 +3457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#ff0000,#ff8800,#ffff00,#00cc00,#0066ff,#9933ff)');
 
     let caughtXP = 0;
-    startNyanMelody();
+    const _sound = playEventSound('nyan');
 
     // Drop coins — pointer-events enabled individually
     const coinInterval = setInterval(() => {
@@ -3140,7 +3471,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const xpVal = [5,5,10,10,20][Math.floor(Math.random() * 5)];
       coin.onclick = (e) => {
         e.stopPropagation();
-        sndCollect();
+        playEventSound('coinRain');
         caughtXP += xpVal;
         counter.textContent = caughtXP + ' XP caught';
         xpPop(e.clientX - 30, e.clientY - 24, xpVal);
@@ -3156,13 +3487,14 @@ document.addEventListener('DOMContentLoaded', () => {
       (pct) => { fill.style.width = pct + '%'; },
       () => {
         clearInterval(coinInterval);
-        stopNyanMelody();
+        
         if (caughtXP > 0 && me()) awardXP(caughtXP, `Nyan Cat Event: caught ${caughtXP} XP`);
+        fadeOutEventSound(_sound);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
     // Store timer so overlay close clears it
-    overlay._cleanup = () => { clearInterval(coinInterval); clearInterval(timerId); stopNyanMelody(); };
+    overlay._cleanup = () => { clearInterval(coinInterval); clearInterval(timerId);  };
   }
 
   // ══════════════════════════════════════
@@ -3199,7 +3531,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.stopPropagation();
       clicks++; totalXP += XP_PER;
       counter.textContent = totalXP + ' XP · ' + clicks + ' clicks';
-      sndClick();
+      playEventSound('oiia');
       cat.style.animation = 'none';
       void cat.offsetWidth;
       cat.style.animation = 'oiiaPop 0.3s ease, oiiaFloat 1.4s ease-in-out 0.3s infinite';
@@ -3256,7 +3588,7 @@ document.addEventListener('DOMContentLoaded', () => {
       coin.textContent = emoji;
       coin.onclick = (e) => {
         e.stopPropagation();
-        sndCoin();
+        playEventSound('coinRain');
         total += xp;
         counter.textContent = total + ' XP';
         xpPop(e.clientX - 28, e.clientY - 20, xp);
@@ -3274,6 +3606,68 @@ document.addEventListener('DOMContentLoaded', () => {
         clearInterval(rainInterval);
         if (total > 0 && me()) awardXP(total, `Coin Rain Event: ${total} XP`);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
+      }
+    );
+  }
+
+  // ══════════════════════════════════════
+  // EVENT — MERGER (CLASSIC)
+  // Rains the first five Merger game circles; each spins as it falls.
+  // ══════════════════════════════════════
+  function playMergerEvent() {
+    const _sound = playEventSound('merger');
+    const overlay = document.createElement('div');
+    overlay.id = 'event-merger-overlay';
+    overlay.className = 'ev-overlay';
+    overlay.style.pointerEvents = 'none';
+    document.body.appendChild(overlay);
+
+    const hint = makeHint('🔵 Merger Event');
+    const { bar, fill } = makeTimerBar('linear-gradient(90deg,#36cdff,#bf36ff)');
+
+    // FIX: only the first five Merger ball images/colors — matches the game's levels 1–5.
+    const MERGER_CIRCLES = [
+      { src: "https://iili.io/f4nzOts.png", color: "#36cdff" },
+      { src: "https://iili.io/f4nzkoG.png", color: "#bf36ff" },
+      { src: "https://iili.io/f4nzvVf.png", color: "#36ff57" },
+      { src: "https://iili.io/f4Vwpgn.png", color: "#daff36" },
+      { src: "https://iili.io/f4VN9Js.png", color: "#ff8282" },
+    ];
+
+    const rainInterval = setInterval(() => {
+      if (!document.getElementById('event-merger-overlay')) { clearInterval(rainInterval); return; }
+      const pick = MERGER_CIRCLES[Math.floor(Math.random() * MERGER_CIRCLES.length)];
+      const size = 30 + Math.random() * 26;
+      const circle = document.createElement('img');
+      circle.src = pick.src;
+      circle.alt = '';
+      circle.style.cssText = `
+        position:fixed;
+        width:${size}px;
+        height:${size}px;
+        border-radius:50%;
+        background:${pick.color};
+        box-shadow:0 0 14px ${pick.color};
+        left:${(5 + Math.random() * 90)}vw;
+        top:-50px;
+        z-index:99998;
+        pointer-events:none;
+        user-select:none;
+        --r:${(Math.random()-0.5)*60}deg;
+        animation:rainFall ${1.8 + Math.random() * 2.4}s linear forwards;
+        filter:drop-shadow(0 0 6px ${pick.color});
+      `;
+      document.body.appendChild(circle);
+      setTimeout(() => { if (circle.parentNode) circle.remove(); }, 4600);
+    }, 220);
+
+    const DURATION = 15000;
+    runTimer(DURATION,
+      (pct) => { fill.style.width = pct + '%'; },
+      () => {
+        clearInterval(rainInterval);
+        fadeOutEventSound(_sound);
+        [overlay, hint, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
   }
@@ -3304,7 +3698,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let total = 0;
 
     function spawnFirework(x, y, auto) {
-      sndFirework();
+      playEventSound('fireworks');
       const colors = ['#FFD700','#ff69b4','#00cfff','#ff6b35','#a0ff80','#ffffff'];
       for (let i = 0; i < 50; i++) {
         const angle = (Math.PI * 2 / 50) * i + Math.random() * 0.2;
@@ -3408,8 +3802,8 @@ document.addEventListener('DOMContentLoaded', () => {
       mole._up = false;
       hole.appendChild(mole);
       hole.onclick = () => {
-        if (!mole._up) { sndMiss(); return; }
-        sndWhack();
+        if (!mole._up) { playEventSound('whackMiss'); return; }
+        playEventSound('whackHit');
         mole.textContent = '💫';
         setTimeout(() => { mole.textContent = '🐹'; }, 250);
         total += 10;
@@ -3558,7 +3952,7 @@ document.addEventListener('DOMContentLoaded', () => {
       target.style.transform = 'scale(1.06)';
       prompt.textContent = 'TAP → ' + COLORS[idx].label;
       prompt.style.color = COLORS[idx].bg;
-      sndDisco();
+      playEventSound('disco');
 
       promptTimer = setTimeout(() => {
         currentTarget = null;
@@ -3574,7 +3968,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentTarget) return;
         if (tile._label === currentTarget) {
           clearTimeout(promptTimer);
-          sndLevelUp();
+          playEventSound('levelUp');
           total += 8;
           counter.textContent = total + ' XP';
           const r = tile.getBoundingClientRect();
@@ -3585,7 +3979,7 @@ document.addEventListener('DOMContentLoaded', () => {
           tiles.forEach(t => { t.style.transform = 'scale(1)'; t.style.boxShadow = 'none'; });
           setTimeout(flashTarget, 700);
         } else {
-          sndMiss();
+          playEventSound('whackMiss');
           tile.style.background = '#ff6b6b44';
           setTimeout(() => { tile.style.background = tile._color + '22'; }, 300);
           prompt.textContent = '✗ WRONG!';
