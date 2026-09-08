@@ -3342,6 +3342,20 @@ document.addEventListener('DOMContentLoaded', () => {
         color:#FFD700;text-transform:uppercase;z-index:99999;pointer-events:none;
         text-shadow:0 0 20px rgba(255,215,0,0.7);
         animation:evFadeIn 0.5s ease;
+        max-width:92vw;text-align:center;white-space:nowrap;
+      }
+      @media (max-width: 480px) {
+        .ev-counter {
+          top:auto;bottom:22px;right:50%;transform:translateX(50%);
+          font-size:12px;padding:6px 14px;white-space:nowrap;
+        }
+        .ev-hint {
+          top:12px;font-size:9px;letter-spacing:1.5px;
+          white-space:normal;line-height:1.4;padding:0 10px;
+        }
+        .xp-coin { font-size:24px; }
+        .admin-event-choice-btn { padding:8px 10px !important; font-size:10px !important; gap:7px !important; }
+        .admin-event-choice-btn img { width:16px !important; height:16px !important; }
       }
       .xp-coin {
         position:fixed;font-size:30px;cursor:pointer;z-index:99998;
