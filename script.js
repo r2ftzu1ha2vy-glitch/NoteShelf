@@ -876,12 +876,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function buildViewerSidebar(activeName) {
   gameViewerGrid.innerHTML = "";
-  const userXP = window.__ns_userXP || 0;
-
   games.forEach(g => {
     const loginLocked = !me() && !freeGames.has(g.name);
-    const levelLocked = me() && !isGameUnlockedByLevel(g.name, userXP);
-    const locked = loginLocked || levelLocked;
+    const shopLocked = me() && !isGameUnlocked(g.name);
+    const locked = loginLocked || shopLocked;
     const unavailable = !isGameAvailable(g.name);
     const manageMode = window.__ns_gamesManageMode && isSiteOwner(me(), window.__ns_ownerCheckEmail || "");
 
@@ -913,12 +911,12 @@ function buildViewerSidebar(activeName) {
       const lockEl = document.createElement("div");
       lockEl.style.cssText = `position:absolute;top:50%;right:8px;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;background:rgba(255,215,0,0.1);border:1px solid rgba(184,150,12,0.5);display:flex;align-items:center;justify-content:center;flex-shrink:0;`;
 
-      if (levelLocked) {
-        const reqLvl = getRequiredLevel(g.name);
+      if (shopLocked) {
+        const price = getGamePrice(g.name);
         lockEl.style.width = "auto";
         lockEl.style.borderRadius = "8px";
         lockEl.style.padding = "2px 5px";
-        lockEl.innerHTML = `<span style="font-family:'Cinzel',serif;font-size:8px;color:#B8960C;letter-spacing:0.5px;">Lv.${reqLvl}</span>`;
+        lockEl.innerHTML = `<span style="font-family:'Cinzel',serif;font-size:8px;color:#B8960C;letter-spacing:0.5px;">${COIN_ICON} ${price}</span>`;
       } else {
         lockEl.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#B8960C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
       }
@@ -930,7 +928,7 @@ function buildViewerSidebar(activeName) {
       if (manageMode) { toggleGameAvailability(g.name); return; }
       if (unavailable) { showGameUnavailablePopup(g.name); return; }
       if (loginLocked) { showLoginGate(); return; }
-      if (levelLocked) { showLevelLockGate(g.name, getRequiredLevel(g.name)); return; }
+      if (shopLocked) { showGameShopGate(g.name); return; }
       loadGameInViewer(g);
     };
 
@@ -1054,13 +1052,12 @@ window.__ns_loadGame = function(game) {
 
 function createGameButton(game) {
   const user = me();
-  const userXP = window.__ns_userXP || 0;
 
   // Not logged in → show login lock for non-free games
   const loginLocked = !user && !freeGames.has(game.name);
-  // Logged in but level too low
-  const levelLocked = user && !isGameUnlockedByLevel(game.name, userXP);
-  const locked = loginLocked || levelLocked;
+  // Logged in but game not purchased yet
+  const shopLocked = user && !isGameUnlocked(game.name);
+  const locked = loginLocked || shopLocked;
   const unavailable = !isGameAvailable(game.name);
   const manageMode = window.__ns_gamesManageMode && isSiteOwner(user, window.__ns_ownerCheckEmail || "");
 
@@ -1083,12 +1080,12 @@ function createGameButton(game) {
     const lockOverlay = document.createElement("div");
     lockOverlay.className = "game-lock-overlay";
 
-    if (levelLocked) {
-      const requiredLvl = getRequiredLevel(game.name);
+    if (shopLocked) {
+      const price = getGamePrice(game.name);
       lockOverlay.innerHTML = `
         <div class="game-lock-icon" style="flex-direction:column;gap:4px;padding:0 8px;text-align:center;">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:1px;color:#FFD700;white-space:nowrap;">Lv.${requiredLvl}</span>
+          <span style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:1px;color:#FFD700;white-space:nowrap;">${COIN_ICON} ${price}</span>
         </div>`;
     } else {
       lockOverlay.innerHTML = `
@@ -1104,7 +1101,7 @@ function createGameButton(game) {
     if (manageMode) { toggleGameAvailability(game.name); return; }
     if (unavailable) { showGameUnavailablePopup(game.name); return; }
     if (loginLocked) { showLoginGate(); return; }
-    if (levelLocked) { showLevelLockGate(game.name, getRequiredLevel(game.name)); return; }
+    if (shopLocked) { showGameShopGate(game.name); return; }
     loadGameInViewer(game);
   };
 
@@ -1525,12 +1522,15 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
     document.getElementById("lg-signup-btn").onclick = () => { overlay.remove(); document.getElementById("signup-btn").click(); };
     document.getElementById("lg-login-btn").onclick = () => { overlay.remove(); document.getElementById("login-btn").click(); };
   }
-  function showLevelLockGate(gameName, requiredLvl) {
-  const old = document.getElementById("level-gate-overlay");
+  function showGameShopGate(gameName) {
+  const price = getGamePrice(gameName);
+  const coins = window.__ns_userCoins || 0;
+  const canAfford = coins >= price;
+  const old = document.getElementById("shop-gate-overlay");
   if (old) old.remove();
 
   const overlay = document.createElement("div");
-  overlay.id = "level-gate-overlay";
+  overlay.id = "shop-gate-overlay";
   overlay.style.cssText = `position:fixed;inset:0;background:rgba(5,4,10,0.92);backdrop-filter:blur(10px);z-index:99999;display:flex;align-items:center;justify-content:center;animation:lgFadeIn 0.25s cubic-bezier(0.4,0,0.2,1);`;
 
   overlay.innerHTML = `
@@ -1547,20 +1547,24 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
       <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:4px;text-transform:uppercase;color:#B8960C;margin-bottom:10px;opacity:0.8;">Locked</div>
       <h2 style="font-family:'Cinzel Decorative',serif;font-size:20px;font-weight:700;color:#FFD700;letter-spacing:1px;margin-bottom:12px;line-height:1.3;">${gameName}</h2>
       <p style="font-family:'EB Garamond',serif;font-size:16px;color:#F0E6CA;line-height:1.7;margin-bottom:10px;">
-        This game unlocks at <strong style="font-family:'Cinzel',serif;color:#FFD700;">Level ${requiredLvl}</strong>.
+        Unlock this game for <strong style="font-family:'Cinzel',serif;color:#FFD700;">${COIN_ICON} ${price}</strong>.
       </p>
       <p style="font-family:'EB Garamond',serif;font-size:14px;color:#B8960C;opacity:0.7;margin-bottom:30px;">
-        Play other games and complete daily quests to earn XP and level up.
+        You have ${COIN_ICON} ${coins.toLocaleString()}. ${canAfford ? "Unlocking is permanent." : "Play games, finish daily quests and join events to earn more coins."}
       </p>
-      <button id="lg2-profile" style="width:100%;padding:13px;background:linear-gradient(135deg,#FFD700,#D4A017);border:none;border-radius:30px;color:#07060A;font-family:'Cinzel',serif;font-weight:700;font-size:12px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;transition:box-shadow 0.22s;">
-        View My Progress
+      <button id="lg2-profile" ${canAfford ? "" : "disabled"} style="width:100%;padding:13px;background:linear-gradient(135deg,#FFD700,#D4A017);border:none;border-radius:30px;color:#07060A;font-family:'Cinzel',serif;font-weight:700;font-size:12px;letter-spacing:3px;text-transform:uppercase;cursor:pointer;transition:box-shadow 0.22s;">
+        ${canAfford ? "Unlock for " + COIN_ICON + " " + price : "Not enough coins"}
       </button>
     </div>
   `;
 
   document.body.appendChild(overlay);
   document.getElementById("lg2-close").onclick = () => overlay.remove();
-  document.getElementById("lg2-profile").onclick = () => { overlay.remove(); showProfileModal(); };
+  document.getElementById("lg2-profile").onclick = async () => {
+    if (!canAfford) { overlay.remove(); showProfileModal(); return; }
+    const ok = await buyGame(gameName);
+    if (ok) overlay.remove();
+  };
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
   document.addEventListener("keydown", function esc(e) {
     if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", esc); }
@@ -3467,8 +3471,8 @@ document.addEventListener('DOMContentLoaded', () => {
     overlay.appendChild(catWrap);
     document.body.appendChild(overlay);
 
-    const hint = makeHint('⭐ Catch the XP coins! ⭐');
-    const counter = makeCounter('0 XP caught');
+    const hint = makeHint('⭐ Catch the coins! ⭐');
+    const counter = makeCounter('0 coins caught');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#ff0000,#ff8800,#ffff00,#00cc00,#0066ff,#9933ff)');
 
     let caughtXP = 0;
@@ -3488,7 +3492,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         playEventSound('coinRain');
         caughtXP += xpVal;
-        counter.textContent = caughtXP + ' XP caught';
+        counter.textContent = caughtXP + ' coins caught';
         xpPop(e.clientX - 30, e.clientY - 24, xpVal);
         coin.style.animation = 'coinPop 0.4s ease forwards';
         setTimeout(() => coin.remove(), 420);
@@ -3503,7 +3507,7 @@ document.addEventListener('DOMContentLoaded', () => {
       () => {
         clearInterval(coinInterval);
         
-        if (caughtXP > 0 && me()) awardXP(caughtXP, `Nyan Cat Event: caught ${caughtXP} XP`);
+        if (caughtXP > 0 && me()) awardCoins(caughtXP, `Nyan Cat Event: caught ${caughtXP} coins`);
         fadeOutEventSound(_sound);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
@@ -3513,7 +3517,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ══════════════════════════════════════
-  // EVENT 2 — OIIA CAT (click cat for XP)
+  // EVENT 2 — OIIA CAT (click cat for coins)
   // ══════════════════════════════════════
   function playOiiaEvent() {
     const overlay = document.createElement('div');
@@ -3535,8 +3539,8 @@ document.addEventListener('DOMContentLoaded', () => {
     overlay.appendChild(cat);
     document.body.appendChild(overlay);
 
-    const hint    = makeHint('Click the cat — earn XP!');
-    const counter = makeCounter('0 XP · 0 clicks');
+    const hint    = makeHint('Click the cat — earn coins!');
+    const counter = makeCounter('0 coins · 0 clicks');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#FFD700,#D4A017)');
 
     let clicks = 0, totalXP = 0;
@@ -3545,7 +3549,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cat.addEventListener('click', (e) => {
       e.stopPropagation();
       clicks++; totalXP += XP_PER;
-      counter.textContent = totalXP + ' XP · ' + clicks + ' clicks';
+      counter.textContent = totalXP + ' coins · ' + clicks + ' clicks';
       playEventSound('oiia');
       cat.style.animation = 'none';
       void cat.offsetWidth;
@@ -3557,7 +3561,7 @@ document.addEventListener('DOMContentLoaded', () => {
     runTimer(DURATION,
       (pct) => { fill.style.width = pct + '%'; },
       () => {
-        if (totalXP > 0 && me()) awardXP(totalXP, `OIIA Cat Event: ${clicks} clicks = ${totalXP} XP`);
+        if (totalXP > 0 && me()) awardCoins(totalXP, `OIIA Cat Event: ${clicks} clicks = ${totalXP} coins`);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
@@ -3575,7 +3579,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(overlay);
 
     const hint    = makeHint('🪙 Click the falling coins!');
-    const counter = makeCounter('0 XP');
+    const counter = makeCounter('0 coins');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#FFD700,#B8960C)');
 
     let total = 0;
@@ -3605,7 +3609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         playEventSound('coinRain');
         total += xp;
-        counter.textContent = total + ' XP';
+        counter.textContent = total + ' coins';
         xpPop(e.clientX - 28, e.clientY - 20, xp);
         coin.style.animation = 'coinPop 0.35s ease forwards';
         setTimeout(() => coin.remove(), 380);
@@ -3619,7 +3623,7 @@ document.addEventListener('DOMContentLoaded', () => {
       (pct) => { fill.style.width = pct + '%'; },
       () => {
         clearInterval(rainInterval);
-        if (total > 0 && me()) awardXP(total, `Coin Rain Event: ${total} XP`);
+        if (total > 0 && me()) awardCoins(total, `Coin Rain Event: ${total} coins`);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
@@ -3704,8 +3708,8 @@ document.addEventListener('DOMContentLoaded', () => {
     overlay.appendChild(canvas);
     document.body.appendChild(overlay);
 
-    const hint    = makeHint('🎆 Tap anywhere for bonus XP!');
-    const counter = makeCounter('0 XP');
+    const hint    = makeHint('🎆 Tap anywhere for bonus coins!');
+    const counter = makeCounter('0 coins');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#ff69b4,#FFD700,#ff69b4)');
 
     const ctx2d = canvas.getContext('2d');
@@ -3729,7 +3733,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!auto && me()) {
         const bonus = 5;
         total += bonus;
-        counter.textContent = total + ' XP';
+        counter.textContent = total + ' coins';
         xpPop(x - 28, y - 20, bonus);
       }
     }
@@ -3772,7 +3776,7 @@ document.addEventListener('DOMContentLoaded', () => {
       () => {
         clearInterval(autoInterval);
         cancelAnimationFrame(animId);
-        if (total > 0 && me()) awardXP(total, `Fireworks Event: ${total} XP`);
+        if (total > 0 && me()) awardCoins(total, `Fireworks Event: ${total} coins`);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
@@ -3822,7 +3826,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mole.textContent = '💫';
         setTimeout(() => { mole.textContent = '🐹'; }, 250);
         total += 10;
-        counter.textContent = total + ' XP · ' + hits + ' hits';
+        counter.textContent = total + ' coins · ' + hits + ' hits';
         hits++;
         mole._up = false;
         mole.style.transform = 'translateX(-50%) translateY(100%)';
@@ -3839,7 +3843,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(overlay);
 
     const hint    = makeHint('🐹 Whack the moles!');
-    const counter = makeCounter('0 XP · 0 hits');
+    const counter = makeCounter('0 coins · 0 hits');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#B8960C,#FFD700,#2ecc71)');
 
     let total = 0, hits = 0;
@@ -3874,7 +3878,7 @@ document.addEventListener('DOMContentLoaded', () => {
       (pct) => { fill.style.width = pct + '%'; },
       () => {
         clearInterval(moleInterval);
-        if (total > 0 && me()) awardXP(total, `Whack-a-Mole Event: ${hits} hits = ${total} XP`);
+        if (total > 0 && me()) awardCoins(total, `Whack-a-Mole Event: ${hits} hits = ${total} coins`);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
@@ -3882,7 +3886,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ══════════════════════════════════════
   // EVENT 6 — DISCO PARTY
-  // Colored tiles flash, match the lit tile for XP
+  // Colored tiles flash, match the lit tile for coins
   // ══════════════════════════════════════
   function playDiscoEvent() {
     const overlay = document.createElement('div');
@@ -3940,7 +3944,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(overlay);
 
     const hint    = makeHint('🕺 Tap the lit colour!');
-    const counter = makeCounter('0 XP');
+    const counter = makeCounter('0 coins');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#ff0080,#00cfff,#FFD700,#00ff80)');
 
     let total = 0;
@@ -3985,7 +3989,7 @@ document.addEventListener('DOMContentLoaded', () => {
           clearTimeout(promptTimer);
           playEventSound('levelUp');
           total += 8;
-          counter.textContent = total + ' XP';
+          counter.textContent = total + ' coins';
           const r = tile.getBoundingClientRect();
           xpPop(r.left + r.width/2 - 28, r.top - 12, 8);
           prompt.textContent = '✓ CORRECT!';
@@ -4010,7 +4014,7 @@ document.addEventListener('DOMContentLoaded', () => {
       (pct) => { fill.style.width = pct + '%'; },
       () => {
         clearTimeout(promptTimer);
-        if (total > 0 && me()) awardXP(total, `Disco Event: ${total} XP`);
+        if (total > 0 && me()) awardCoins(total, `Disco Event: ${total} coins`);
         [overlay, hint, counter, bar].forEach(el => { el.style.animation = 'evFadeOut 0.5s ease forwards'; setTimeout(() => el.remove(), 500); });
       }
     );
@@ -4091,99 +4095,99 @@ document.addEventListener('DOMContentLoaded', () => {
 })();
 
 // =====================================
-// XP & LEVEL SYSTEM
+// COIN SYSTEM
 // =====================================
+// Coins are earned from events and daily quests, and spent in the Game Shop
+// to permanently unlock premium games.
+//
+// NOTE: the balance is still stored at users/<name>/xp so balances that
+// existed before the switch carry over. Purchased games live at
+// users/<name>/unlockedGames/<gameKey> = true.
 
-// Level thresholds — XP needed to REACH that level (cumulative)
-const LEVEL_THRESHOLDS = [
-  0,      // level 1
-  100,    // level 2
-  250,    // level 3
-  500,    // level 4
-  900,    // level 5
-  1400,   // level 6
-  2100,   // level 7
-  3000,   // level 8
-  4200,   // level 9
-  5800,   // level 10
-];
+const COIN_ICON = "🪙";
 
-// Games unlocked per level (level = index+1, level 1 = always unlocked)
-const LEVEL_UNLOCKS = {
-  5: ["HexAsteal", "8-Ball Billiards"],
-  6: ["Vaults", "Where'd You Land?"],
+// Games that cost coins to unlock. Anything not listed here is free.
+const GAME_PRICES = {
+  "HexAsteal":         300,
+  "8-Ball Billiards":  300,
+  "Vaults":            500,
+  "Where'd You Land?": 500,
 };
 
-function xpForLevel(lvl) { return LEVEL_THRESHOLDS[Math.min(lvl - 1, LEVEL_THRESHOLDS.length - 1)] || 0; }
-function xpForNextLevel(lvl) { return LEVEL_THRESHOLDS[Math.min(lvl, LEVEL_THRESHOLDS.length - 1)] || null; }
+window.__ns_userCoins     = 0;
+window.__ns_unlockedGames = {};
 
-function getLevelFromXP(xp) {
-  let lvl = 1;
-  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
-    if (xp >= LEVEL_THRESHOLDS[i]) lvl = i + 1;
-    else break;
-  }
-  return lvl;
+function gameKey(name) { return String(name).replace(/[.#$\[\]\/]/g, "_"); }
+function getGamePrice(gameName) { return GAME_PRICES[gameName] || 0; }
+function isGameUnlocked(gameName) {
+  return !getGamePrice(gameName) || !!window.__ns_unlockedGames[gameKey(gameName)];
+}
+function refreshGameViews() {
+  // Re-renders the game grid + viewer sidebar (listener lives in the games module)
+  document.dispatchEvent(new CustomEvent("ns_game_availability_changed"));
 }
 
-function isGameUnlockedByLevel(gameName, xp) {
-  const lvl = getLevelFromXP(xp);
-  for (let [requiredLvl, gameList] of Object.entries(LEVEL_UNLOCKS)) {
-    if (gameList.includes(gameName)) {
-      return lvl >= parseInt(requiredLvl);
-    }
-  }
-  return true; // not in any restricted list = always unlocked
-}
-
-function getRequiredLevel(gameName) {
-  for (let [requiredLvl, gameList] of Object.entries(LEVEL_UNLOCKS)) {
-    if (gameList.includes(gameName)) return parseInt(requiredLvl);
-  }
-  return 1;
-}
-
-// ── XP Persistence ──
-async function getUserXP(username) {
+// ── Coin Persistence ──
+async function getUserCoins(username) {
   if (!username) return 0;
   const snap = await db.ref("users/" + username + "/xp").once("value");
   return snap.val() || 0;
 }
 
-async function awardXP(amount, reason) {
-  const user = me();
-  if (!user || !amount) return;
-  const snap = await db.ref("users/" + user + "/xp").once("value");
-  const oldXP = snap.val() || 0;
-  const newXP = oldXP + amount;
-  const oldLevel = getLevelFromXP(oldXP);
-  const newLevel = getLevelFromXP(newXP);
-  await db.ref("users/" + user + "/xp").set(newXP);
-  updateLevelBadge(newXP);
-  showXPToast("+" + amount + " XP" + (reason ? "  ·  " + reason : ""));
-  if (newLevel > oldLevel) {
-    setTimeout(() => showLevelUpPopup(newLevel), 600);
-  }
+async function getUnlockedGames(username) {
+  if (!username) return {};
+  const snap = await db.ref("users/" + username + "/unlockedGames").once("value");
+  return snap.val() || {};
 }
 
-// ── Level Badge in top bar ──
-function updateLevelBadge(xp) {
-  const lvl  = getLevelFromXP(xp);
-  const next = xpForNextLevel(lvl);
-  const cur  = xpForLevel(lvl);
-  const pct  = next ? Math.min(100, ((xp - cur) / (next - cur)) * 100) : 100;
+async function awardCoins(amount, reason) {
+  const user = me();
+  if (!user || !amount) return;
+  const res = await db.ref("users/" + user + "/xp").transaction(cur => (cur || 0) + amount);
+  const newBal = res.snapshot.val() || 0;
+  window.__ns_userCoins = newBal;
+  updateCoinBadge(newBal);
+  showCoinToast("+" + amount + " " + COIN_ICON + (reason ? "  ·  " + reason : ""));
+}
 
-  let badge = document.getElementById("ns-level-badge");
+// Spend coins to permanently unlock a game. Returns true on success.
+async function buyGame(gameName) {
+  const user = me();
+  const price = getGamePrice(gameName);
+  if (!user || !price) return false;
+  if (isGameUnlocked(gameName)) return true;
+
+  const res = await db.ref("users/" + user + "/xp").transaction(cur => {
+    if (cur === null) return 0;      // first local pass can be empty; server will retry with the real value
+    if (cur < price) return;         // not enough coins → abort
+    return cur - price;
+  });
+  if (!res.committed) {
+    showCoinToast("Not enough coins — " + COIN_ICON + " " + price + " needed");
+    return false;
+  }
+  await db.ref("users/" + user + "/unlockedGames/" + gameKey(gameName)).set(true);
+  window.__ns_unlockedGames[gameKey(gameName)] = true;
+  window.__ns_userCoins = res.snapshot.val() || 0;
+  updateCoinBadge(window.__ns_userCoins);
+  showCoinToast("🔓 Unlocked " + gameName);
+  refreshGameViews();
+  return true;
+}
+
+// ── Coin Badge in top bar ──
+function updateCoinBadge(coins) {
+  let badge = document.getElementById("ns-coin-badge");
   if (!badge) {
     badge = document.createElement("div");
-    badge.id = "ns-level-badge";
+    badge.id = "ns-coin-badge";
     badge.style.cssText = `
       display:inline-flex;align-items:center;gap:7px;
       background:rgba(255,215,0,0.07);border:1px solid rgba(184,150,12,0.45);
-      border-radius:20px;padding:5px 12px 5px 8px;cursor:pointer;
+      border-radius:20px;padding:5px 12px;cursor:pointer;
       transition:all 0.22s;
     `;
-    badge.title = "Your level & XP";
+    badge.title = "Your coins & Game Shop";
     badge.onclick = () => showProfileModal();
 
     // Place after profile section in top-bar
@@ -4193,21 +4197,17 @@ function updateLevelBadge(xp) {
     }
   }
 
-  const filled = Math.round(pct / 10);
   badge.innerHTML = `
-    <span style="font-family:'Cinzel Decorative',serif;font-size:11px;color:#FFD700;letter-spacing:1px;">Lv.${lvl}</span>
-    <div style="width:52px;height:6px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;">
-      <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#B8960C,#FFD700);border-radius:3px;transition:width 0.4s ease;"></div>
-    </div>
-    <span style="font-family:'Cinzel',serif;font-size:9px;color:var(--gold-dim);letter-spacing:0.5px;">${xp}${next ? "/"+next : ""}</span>
+    <span style="font-size:13px;line-height:1;">${COIN_ICON}</span>
+    <span style="font-family:'Cinzel',serif;font-size:11px;color:#FFD700;letter-spacing:1px;">${coins.toLocaleString()}</span>
   `;
 }
 
-function showXPToast(msg) {
-  let t = document.getElementById("xp-toast");
+function showCoinToast(msg) {
+  let t = document.getElementById("coin-toast");
   if (!t) {
     t = document.createElement("div");
-    t.id = "xp-toast";
+    t.id = "coin-toast";
     t.style.cssText = `
       position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(16px);
       background:linear-gradient(135deg,#141219,#0D0B12);
@@ -4231,78 +4231,15 @@ function showXPToast(msg) {
   }, 2800);
 }
 
-function showLevelUpPopup(lvl) {
-  const old = document.getElementById("levelup-overlay");
-  if (old) old.remove();
-  const overlay = document.createElement("div");
-  overlay.id = "levelup-overlay";
-  overlay.style.cssText = `
-    position:fixed;inset:0;z-index:99999;
-    display:flex;align-items:center;justify-content:center;
-    background:rgba(5,4,10,0.88);backdrop-filter:blur(6px);
-    animation:luFadeIn 0.35s cubic-bezier(0.4,0,0.2,1);
-  `;
-
-  const unlocked = [];
-  for (let [requiredLvl, gameList] of Object.entries(LEVEL_UNLOCKS)) {
-    if (parseInt(requiredLvl) === lvl) unlocked.push(...gameList);
-  }
-
-  overlay.innerHTML = `
-    <style>
-      @keyframes luFadeIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
-      @keyframes luShine { 0%,100%{opacity:0.6} 50%{opacity:1} }
-      #lu-box {
-        background:linear-gradient(160deg,#141219,#0D0B12);
-        border:1px solid rgba(255,215,0,0.6);border-radius:24px;
-        padding:48px 40px 36px;max-width:420px;width:90%;
-        text-align:center;
-        box-shadow:0 0 80px rgba(255,215,0,0.14),0 32px 80px rgba(0,0,0,0.9);
-        position:relative;overflow:hidden;
-      }
-      #lu-box::before {
-        content:'';position:absolute;top:0;left:0;right:0;height:1px;
-        background:linear-gradient(90deg,transparent,rgba(255,215,0,0.7),transparent);
-      }
-      .lu-star { font-size:52px;display:block;margin-bottom:12px;animation:luShine 1.2s ease infinite; }
-      .lu-level { font-family:'Cinzel Decorative',serif;font-size:clamp(28px,5vw,42px);font-weight:900;color:#FFD700;
-        letter-spacing:3px;text-shadow:0 0 40px rgba(255,215,0,0.5);margin-bottom:6px; }
-      .lu-sub { font-family:'Cinzel',serif;font-size:10px;letter-spacing:4px;color:#B8960C;opacity:0.7;text-transform:uppercase;margin-bottom:24px; }
-      .lu-unlocks { font-family:'EB Garamond',serif;font-size:15px;color:#F0E6CA;line-height:1.7;margin-bottom:28px; }
-      .lu-unlocks strong { color:#FFD700;font-family:'Cinzel',serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:8px; }
-      .lu-continue {
-        width:100%;padding:13px;
-        background:linear-gradient(135deg,#FFD700,#D4A017);
-        border:none;border-radius:30px;color:#07060A;
-        font-family:'Cinzel',serif;font-weight:700;font-size:12px;
-        letter-spacing:3px;text-transform:uppercase;
-        cursor:pointer;transition:box-shadow 0.22s;
-      }
-      .lu-continue:hover { box-shadow:0 0 28px rgba(255,215,0,0.4); }
-    </style>
-    <div id="lu-box">
-      <span class="lu-star">⭐</span>
-      <div class="lu-level">Level ${lvl}</div>
-      <div class="lu-sub">◆ Level Up! ◆</div>
-      ${unlocked.length ? `<div class="lu-unlocks"><strong>🔓 Unlocked</strong>${unlocked.join(", ")}</div>` : ""}
-      <button class="lu-continue" id="lu-close">Continue</button>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  document.getElementById("lu-close").onclick = () => overlay.remove();
-  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
-  setTimeout(() => overlay.remove(), 8000);
-}
-
-// ── Profile modal (XP details) ──
+// ── Wallet + Game Shop modal ──
 function showProfileModal() {
   const user = me(); if (!user) return;
-  getUserXP(user).then(xp => {
-    const lvl  = getLevelFromXP(xp);
-    const next = xpForNextLevel(lvl);
-    const cur  = xpForLevel(lvl);
-    const pct  = next ? Math.min(100, ((xp - cur) / (next - cur)) * 100) : 100;
-    const old  = document.getElementById("ns-profile-modal");
+  Promise.all([getUserCoins(user), getUnlockedGames(user)]).then(([coins, unlocked]) => {
+    window.__ns_userCoins = coins;
+    window.__ns_unlockedGames = unlocked;
+    updateCoinBadge(coins);
+
+    const old = document.getElementById("ns-profile-modal");
     if (old) old.remove();
 
     const modal = document.createElement("div");
@@ -4313,84 +4250,82 @@ function showProfileModal() {
       background:rgba(5,4,10,0.88);backdrop-filter:blur(6px);
     `;
 
-    // Build level unlock list
-    let unlockHTML = "";
-    for (let [requiredLvl, gameList] of Object.entries(LEVEL_UNLOCKS)) {
-      const rl = parseInt(requiredLvl);
-      const done = lvl >= rl;
-      unlockHTML += `
-        <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,215,0,0.06);">
-          <span style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;color:${done ? '#2ecc71':'#B8960C'};min-width:52px;">Lv.${rl}</span>
-          <span style="font-family:'EB Garamond',serif;font-size:13px;color:${done ? '#F0E6CA':'rgba(240,230,202,0.4)'};flex:1;">${gameList.join(", ")}</span>
-          ${done
-  ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`
-  : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(184,150,12,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
-}
+    let shopHTML = "";
+    for (const [name, price] of Object.entries(GAME_PRICES)) {
+      const owned = !!unlocked[gameKey(name)];
+      const canAfford = coins >= price;
+      shopHTML += `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,215,0,0.06);">
+          <span style="font-family:'EB Garamond',serif;font-size:14px;color:${owned ? '#F0E6CA' : 'rgba(240,230,202,0.75)'};flex:1;">${name}</span>
+          ${owned
+            ? `<span style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;color:#2ecc71;">✓ OWNED</span>`
+            : `<button class="pm-buy" data-game="${name.replace(/"/g, '&quot;')}" ${canAfford ? "" : "disabled"} style="padding:5px 12px;border-radius:20px;border:1px solid rgba(184,150,12,${canAfford ? '0.7' : '0.25'});background:${canAfford ? 'rgba(255,215,0,0.1)' : 'transparent'};color:${canAfford ? '#FFD700' : 'rgba(184,150,12,0.5)'};font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;cursor:${canAfford ? 'pointer' : 'not-allowed'};">${COIN_ICON} ${price}</button>`}
         </div>
       `;
     }
 
     modal.innerHTML = `
       <div style="background:linear-gradient(160deg,#141219,#0D0B12);border:1px solid rgba(184,150,12,0.5);border-radius:24px;padding:36px 32px 28px;max-width:440px;width:90%;position:relative;box-shadow:0 32px 80px rgba(0,0,0,0.9);">
-        <button id="pm-close" style="position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;border:1px solid rgba(184,150,12,0.3);background:transparent;color:#B8960C;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">✕</button>
-        <div style="font-family:'Cinzel Decorative',serif;font-size:18px;font-weight:900;color:#FFD700;letter-spacing:2px;margin-bottom:4px;">Level ${lvl}</div>
-        <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:3px;color:#B8960C;opacity:0.7;margin-bottom:18px;text-transform:uppercase;">@${user}</div>
-        <div style="background:rgba(255,255,255,0.04);border-radius:8px;height:10px;overflow:hidden;margin-bottom:6px;">
-          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#B8960C,#FFD700);border-radius:8px;transition:width 0.5s ease;"></div>
-        </div>
-        <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:1px;color:#B8960C;text-align:right;margin-bottom:22px;">
-          ${xp} / ${next || xp} XP${next ? "  (" + Math.round(pct) + "%)" : "  — MAX"}
-        </div>
-        <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:2px;color:#B8960C;opacity:0.75;text-transform:uppercase;margin-bottom:10px;">Game Unlocks</div>
-        <div style="max-height:200px;overflow-y:auto;padding-right:4px;">${unlockHTML}</div>
+        <button id="pm-close" style="position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;border:1px solid rgba(184,150,12,0.3);background:transparent;color:#B8960C;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;">×</button>
+        <div style="font-family:'Cinzel Decorative',serif;font-size:22px;font-weight:900;color:#FFD700;letter-spacing:2px;margin-bottom:4px;">${COIN_ICON} ${coins.toLocaleString()}</div>
+        <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:3px;color:#B8960C;opacity:0.7;margin-bottom:22px;text-transform:uppercase;">@${user}</div>
+        <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:2px;color:#B8960C;opacity:0.75;text-transform:uppercase;margin-bottom:6px;">Game Shop</div>
+        <div style="max-height:240px;overflow-y:auto;padding-right:4px;">${shopHTML}</div>
+        <div style="font-family:'EB Garamond',serif;font-size:13px;color:#B8960C;opacity:0.7;margin-top:14px;line-height:1.5;">Earn coins from daily quests and live events.</div>
       </div>
     `;
     document.body.appendChild(modal);
     document.getElementById("pm-close").onclick = () => modal.remove();
     modal.onclick = e => { if (e.target === modal) modal.remove(); };
+    modal.querySelectorAll(".pm-buy").forEach(b => {
+      b.onclick = async () => {
+        b.disabled = true;
+        const ok = await buyGame(b.dataset.game);
+        if (ok) showProfileModal(); else b.disabled = false;
+      };
+    });
   });
 }
 
-// ── Init level badge on login ──
-window.addEventListener("ns_login", async (e) => {
-  const xp = await getUserXP(e.detail.username);
-  window.__ns_userXP = xp;  // <-- add this line
-  updateLevelBadge(xp);
-});
+// ── Init coins on login ──
+async function loadCoinState(username) {
+  const [coins, unlocked] = await Promise.all([getUserCoins(username), getUnlockedGames(username)]);
+  window.__ns_userCoins = coins;
+  window.__ns_unlockedGames = unlocked;
+  updateCoinBadge(coins);
+  refreshGameViews();
+}
+window.addEventListener("ns_login", (e) => { loadCoinState(e.detail.username); });
 window.addEventListener("ns_logout", () => {
-  window.__ns_userXP = 0;  // <-- add this line
-  const badge = document.getElementById("ns-level-badge");
+  window.__ns_userCoins = 0;
+  window.__ns_unlockedGames = {};
+  const badge = document.getElementById("ns-coin-badge");
   if (badge) badge.remove();
 });
-if (me()) {
-  getUserXP(me()).then(xp => {
-    window.__ns_userXP = xp;  // <-- add this line
-    updateLevelBadge(xp);
-  });
-}
+if (me()) loadCoinState(me());
 
 // =====================================
 // DAILY QUESTS SYSTEM
 // =====================================
 
 const DAILY_QUESTS = [
-  { id: "play_hexasteal",     label: "Play HexAsteal for 5 min",       game: "HexAsteal",            minutes: 5,  xp: 5 },
-  { id: "play_merger",        label: "Play Merger for 5 min",           game: "Merger",               minutes: 5,  xp: 5 },
-  { id: "play_shadowbox",     label: "Play Shadow Boxing for 5 min",    game: "Shadow Boxing",        minutes: 5,  xp: 5 },
-  { id: "play_highway",       label: "Play Highway Crash for 5 min",    game: "Highway Crash",        minutes: 5,  xp: 5 },
-  { id: "play_tetricks",      label: "Play Tetricks for 5 min",         game: "Tetricks",             minutes: 5,  xp: 5 },
-  { id: "play_meme",          label: "Play Meme Rng for 5 min",         game: "Meme Rng",             minutes: 5,  xp: 5 },
-  { id: "play_cosmic",        label: "Play Cosmic Duel for 5 min",      game: "Cosmic Duel",          minutes: 5,  xp: 5 },
-  { id: "play_ringbound",     label: "Play RingBound for 5 min",        game: "RingBound",            minutes: 5,  xp: 5 },
-  { id: "play_pizza",         label: "Play Pizza Panic for 5 min",      game: "Pizza Panic",          minutes: 5,  xp: 5 },
-  { id: "play_meadow",        label: "Play Meadow Farm for 5 min",      game: "Meadow Farm",          minutes: 5,  xp: 5 },
-  { id: "play_billiards",     label: "Play 8-Ball Billiards for 5 min", game: "8-Ball Billiards",     minutes: 5,  xp: 5 },
-  { id: "play_badminton",     label: "Play Badminton Champion for 5 min",game:"Badminton Champion",   minutes: 5,  xp: 5 },
-  { id: "play_star",          label: "Play Star Runner for 5 min",      game: "Star Runner",          minutes: 5,  xp: 5 },
-  { id: "play_sqd",           label: "Play Square Dodge for 5 min",     game: "Square Dodge",         minutes: 5,  xp: 5 },
-  { id: "play_tap",           label: "Play Tap Tempo for 5 min",        game: "Tap Tempo",            minutes: 5,  xp: 5 },
-  { id: "play_build",         label: "Play Build N Defend Tower 5 min", game: "Build N Defend Tower", minutes: 5,  xp: 5 },
-  { id: "play_adventure",     label: "Play ADventure for 5 min",        game: "ADventure",            minutes: 5,  xp: 5 },
+  { id: "play_hexasteal",     label: "Play HexAsteal for 5 min",       game: "HexAsteal",            minutes: 5,  coins: 5 },
+  { id: "play_merger",        label: "Play Merger for 5 min",           game: "Merger",               minutes: 5,  coins: 5 },
+  { id: "play_shadowbox",     label: "Play Shadow Boxing for 5 min",    game: "Shadow Boxing",        minutes: 5,  coins: 5 },
+  { id: "play_highway",       label: "Play Highway Crash for 5 min",    game: "Highway Crash",        minutes: 5,  coins: 5 },
+  { id: "play_tetricks",      label: "Play Tetricks for 5 min",         game: "Tetricks",             minutes: 5,  coins: 5 },
+  { id: "play_meme",          label: "Play Meme Rng for 5 min",         game: "Meme Rng",             minutes: 5,  coins: 5 },
+  { id: "play_cosmic",        label: "Play Cosmic Duel for 5 min",      game: "Cosmic Duel",          minutes: 5,  coins: 5 },
+  { id: "play_ringbound",     label: "Play RingBound for 5 min",        game: "RingBound",            minutes: 5,  coins: 5 },
+  { id: "play_pizza",         label: "Play Pizza Panic for 5 min",      game: "Pizza Panic",          minutes: 5,  coins: 5 },
+  { id: "play_meadow",        label: "Play Meadow Farm for 5 min",      game: "Meadow Farm",          minutes: 5,  coins: 5 },
+  { id: "play_billiards",     label: "Play 8-Ball Billiards for 5 min", game: "8-Ball Billiards",     minutes: 5,  coins: 5 },
+  { id: "play_badminton",     label: "Play Badminton Champion for 5 min",game:"Badminton Champion",   minutes: 5,  coins: 5 },
+  { id: "play_star",          label: "Play Star Runner for 5 min",      game: "Star Runner",          minutes: 5,  coins: 5 },
+  { id: "play_sqd",           label: "Play Square Dodge for 5 min",     game: "Square Dodge",         minutes: 5,  coins: 5 },
+  { id: "play_tap",           label: "Play Tap Tempo for 5 min",        game: "Tap Tempo",            minutes: 5,  coins: 5 },
+  { id: "play_build",         label: "Play Build N Defend Tower 5 min", game: "Build N Defend Tower", minutes: 5,  coins: 5 },
+  { id: "play_adventure",     label: "Play ADventure for 5 min",        game: "ADventure",            minutes: 5,  coins: 5 },
 ];
 
 function todayKey() {
@@ -4458,9 +4393,9 @@ function startQuestTimer(gameName) {
         _questTimers[q.id].completed = true;
         prog[q.id].completed = true;
         saveQuestProgress(me(), prog);
-        awardXP(q.xp, "Daily Quest: " + q.label);
+        awardCoins(q.coins, "Daily Quest: " + q.label);
         updateQuestUI();
-        showXPToast("✅ Quest complete! " + q.label);
+        showCoinToast("✅ Quest complete! " + q.label);
       }
     }, 1000);
   });
@@ -4587,8 +4522,8 @@ function updateQuestUI() {
               <div style="height:100%;width:${pct}%;background:${completed?'linear-gradient(90deg,#2ecc71,#27ae60)':'linear-gradient(90deg,#B8960C,#FFD700)'};border-radius:3px;transition:width 0.5s;"></div>
             </div>
             <div style="font-family:'Cinzel',serif;font-size:9px;color:#B8960C;opacity:0.7;display:flex;justify-content:space-between;">
-              <span>${completed ? 'Complete! +'+q.xp+' XP earned' : isActive ? `${mins}m ${secs < 10 ? '0':''}${secs}s remaining…` : `${Math.floor(elapsed/60)}m ${elapsed%60}s / ${q.minutes}m`}</span>
-              <span>+${q.xp} XP</span>
+              <span>${completed ? 'Complete! +'+q.coins+' coins earned' : isActive ? `${mins}m ${secs < 10 ? '0':''}${secs}s remaining…` : `${Math.floor(elapsed/60)}m ${elapsed%60}s / ${q.minutes}m`}</span>
+              <span>+${q.coins} ${COIN_ICON}</span>
             </div>
           </div>
         `;
@@ -4677,7 +4612,7 @@ document.addEventListener("ns_game_closed", () => {
 // Drop-in addition to script.js
 // =====================================
 // Adds:
-//   1. Leaderboard      — top players by XP/level, visible to all
+//   1. Leaderboard      — richest players by coins, visible to all
 //   2. User Profile Cards — click a username in chat to see level, avatar, fav game
 //   3. Recently Played  — track & show last 3–5 games per user
 // =====================================
@@ -4874,8 +4809,7 @@ document.addEventListener("ns_game_closed", () => {
     if (profileCache[username]) return profileCache[username];
     const snap = await db.ref("users/" + username).once("value");
     const data = snap.val() || {};
-    const xp   = data.xp || 0;
-    const lvl  = getLevelFromXP(xp);
+    const coins = data.xp || 0;
 
     // Derive "favorite game" from recent played data stored per user
     let recentGames = [];
@@ -4886,8 +4820,7 @@ document.addEventListener("ns_game_closed", () => {
 
     profileCache[username] = {
       avatar:       data.avatar || "",
-      xp,
-      level:        lvl,
+      coins,
       verified:     data.emailVerified || false,
       isAdmin:      data.isAdmin || false,
       isBanAdmin:   data.isBanAdmin || false,
@@ -4949,9 +4882,6 @@ document.addEventListener("ns_game_closed", () => {
       if (!document.getElementById("ns-profile-card")) return;
       const games   = window.__ns_games || [];
       const favGame = games.find(g => g.name === profile.favoriteGame);
-      const nextXp  = xpForNextLevel(profile.level);
-      const curXp   = xpForLevel(profile.level);
-      const pct     = nextXp ? Math.min(100, ((profile.xp - curXp) / (nextXp - curXp)) * 100) : 100;
 
       const recentHTML = profile.recentGames.slice(0, 3).map(name => {
         const g = games.find(x => x.name === name);
@@ -4977,18 +4907,8 @@ document.addEventListener("ns_game_closed", () => {
               ${username} ${verifiedBadge}
             </div>
             <div style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${adminBadge}
-              <span style="font-family:'Cinzel Decorative',serif;font-size:11px;color:#FFD700;">Lv.${profile.level}</span>
+              <span style="font-family:'Cinzel Decorative',serif;font-size:11px;color:#FFD700;">${COIN_ICON} ${profile.coins.toLocaleString()}</span>
             </div>
-          </div>
-        </div>
-
-        <div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-family:'Cinzel',serif;font-size:9px;letter-spacing:1px;color:#B8960C;margin-bottom:4px;">
-            <span>XP</span>
-            <span>${profile.xp}${nextXp ? " / " + nextXp : ""}</span>
-          </div>
-          <div style="height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
-            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#B8960C,#FFD700);border-radius:3px;transition:width 0.5s ease;"></div>
           </div>
         </div>
 
@@ -5332,10 +5252,6 @@ document.addEventListener("ns_game_closed", () => {
         </svg>
       </button>
     </div>
-    <div id="lb-tabs">
-      <button class="lb-tab active" data-tab="xp">By XP</button>
-      <button class="lb-tab" data-tab="level">By Level</button>
-    </div>
     <div id="lb-list"><div id="lb-loading">Loading champions…</div></div>
     <div id="lb-me-row-fixed" style="display:none;"></div>
   `;
@@ -5381,7 +5297,7 @@ document.addEventListener("ns_game_closed", () => {
     const listEl = document.getElementById("lb-list");
     listEl.innerHTML = `<div id="lb-loading">Loading champions…</div>`;
 
-    // Fetch top 50 users by XP
+    // Fetch top 50 users by coin balance
     try {
       const snap = await db.ref("users").orderByChild("xp").limitToLast(50).once("value");
       const raw = [];
@@ -5391,7 +5307,6 @@ document.addEventListener("ns_game_closed", () => {
         raw.push({
           username: child.key,
           xp:       d.xp || 0,
-          level:    getLevelFromXP(d.xp || 0),
           avatar:   d.avatar || "",
           verified: d.emailVerified || false,
         });
@@ -5406,10 +5321,10 @@ document.addEventListener("ns_game_closed", () => {
         if (idx >= 0) {
           myRank = { rank: idx + 1, ...lbData[idx] };
         } else {
-          // fetch own XP
-          const myXP = window.__ns_userXP || 0;
+          // use own balance
+          const myXP = window.__ns_userCoins || 0;
           const below = lbData.filter(p => p.xp < myXP).length;
-          myRank = { rank: lbData.length - below + 1, username: me(), xp: myXP, level: getLevelFromXP(myXP), avatar: "" };
+          myRank = { rank: lbData.length - below + 1, username: me(), xp: myXP, avatar: "" };
         }
       }
 
@@ -5424,7 +5339,7 @@ document.addEventListener("ns_game_closed", () => {
     const listEl  = document.getElementById("lb-list");
     const fixedEl = document.getElementById("lb-me-row-fixed");
 
-    const sorted = [...lbData].sort((a, b) => currentTab === "level" ? (b.level - a.level || b.xp - a.xp) : b.xp - a.xp);
+    const sorted = [...lbData].sort((a, b) => b.xp - a.xp);
     listEl.innerHTML = "";
 
     sorted.slice(0, 20).forEach((player, idx) => {
@@ -5470,11 +5385,10 @@ document.addEventListener("ns_game_closed", () => {
     row.innerHTML += `
       <div class="lb-info">
         <div class="lb-name">${namePrefix}${player.username}${player.verified ? " ✓" : ""}</div>
-        <div class="lb-sub">Lv.${player.level}</div>
       </div>
       <div>
         <div class="lb-xp">${player.xp.toLocaleString()}</div>
-        <div class="lb-xp-sub">XP</div>
+        <div class="lb-xp-sub">Coins</div>
       </div>
       ${rank === 1 ? '<div class="lb-crown">👑</div>' : ""}
     `;
