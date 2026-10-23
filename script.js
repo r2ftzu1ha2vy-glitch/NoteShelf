@@ -3330,9 +3330,34 @@ document.addEventListener('DOMContentLoaded', () => {
     return id;
   }
 
+  // ── Coin currency icon (SVG sprite, injected once) ──
+  function ensureCoinSprite() {
+    if (document.getElementById('ns-coin-sprite')) return;
+    const holder = document.createElement('div');
+    holder.id = 'ns-coin-sprite';
+    holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;';
+    holder.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true"><defs>
+      <linearGradient id="ns-coin-face" x1="12" y1="8" x2="52" y2="58" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFE45C"/><stop offset="0.55" stop-color="#FFD700"/><stop offset="1" stop-color="#B8960C"/></linearGradient>
+      <linearGradient id="ns-coin-rim" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#F1E3A6"/><stop offset="0.5" stop-color="#FACD03"/><stop offset="1" stop-color="#B8960C"/></linearGradient>
+      <symbol id="ns-coin" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="29" fill="url(#ns-coin-rim)" stroke="#1C170B" stroke-width="2"/>
+        <circle cx="32" cy="32" r="22.5" fill="url(#ns-coin-face)" stroke="#1C170B" stroke-width="1.5"/>
+        <circle cx="32" cy="32" r="25.8" fill="none" stroke="#1C170B" stroke-opacity="0.35" stroke-width="2.4" stroke-dasharray="1.6 2.6"/>
+        <polygon points="32,19 35.17,27.63 44.36,27.98 37.14,33.67 39.64,42.52 32,37.4 24.36,42.52 26.86,33.67 19.64,27.98 28.83,27.63" fill="#FACD03" stroke="#1C170B" stroke-width="1.5" stroke-linejoin="round"/>
+        <path d="M15 24 A19 19 0 0 1 26 13.5" fill="none" stroke="#F6F1DB" stroke-width="2.4" stroke-linecap="round" stroke-opacity="0.9"/>
+        <path d="M28.5 24.5 L32 22.5" fill="none" stroke="#F6F1DB" stroke-width="1.4" stroke-linecap="round" stroke-opacity="0.8"/>
+      </symbol></defs></svg>`;
+    document.body.appendChild(holder);
+  }
+  function coinSVG(size) {
+    ensureCoinSprite();
+    const n = size || 24;
+    return `<svg width="${n}" height="${n}" viewBox="0 0 64 64" style="display:inline-block;vertical-align:middle;" aria-label="coin"><use href="#ns-coin"/></svg>`;
+  }
+
   function xpPop(x, y, amount, parent) {
     const el = document.createElement('div'); el.className = 'xp-pop';
-    el.textContent = '+' + amount + ' ⭐';
+    el.innerHTML = '+' + amount + ' ' + coinSVG(18);
     el.style.left = x + 'px'; el.style.top = y + 'px';
     (parent || document.body).appendChild(el);
     setTimeout(() => el.remove(), 1000);
@@ -3388,7 +3413,7 @@ document.addEventListener('DOMContentLoaded', () => {
     overlay.appendChild(catWrap);
     document.body.appendChild(overlay);
 
-    const hint = makeHint('⭐ Catch the coins! ⭐');
+    const hint = makeHint('Catch the coins!');
     const counter = makeCounter('0 coins caught');
     const { bar, fill } = makeTimerBar('linear-gradient(90deg,#ff0000,#ff8800,#ffff00,#00cc00,#0066ff,#9933ff)');
 
@@ -3401,7 +3426,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const coin = document.createElement('div');
       coin.className = 'xp-coin';
       coin.style.pointerEvents = 'auto'; // coins ARE clickable
-      coin.textContent = '⭐';
+      coin.innerHTML = coinSVG(30);
       coin.style.left  = (10 + Math.random() * 80) + 'vw';
       coin.style.top   = (8  + Math.random() * 32) + 'vh';
       const xpVal = [5,5,10,10,20][Math.floor(Math.random() * 5)];
@@ -3521,7 +3546,7 @@ document.addEventListener('DOMContentLoaded', () => {
         animation:rainFall ${1.8 + Math.random() * 2.4}s linear forwards;
         filter:drop-shadow(0 0 6px rgba(255,215,0,0.8));
       `;
-      coin.textContent = emoji;
+      if (emoji === '🪙') coin.innerHTML = coinSVG(30); else coin.textContent = emoji;
       coin.onclick = (e) => {
         e.stopPropagation();
         playEventSound('coinRain');
