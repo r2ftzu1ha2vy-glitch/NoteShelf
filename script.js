@@ -1205,7 +1205,7 @@ window.__ns_toggleGameAvailability = toggleGameAvailability;
 
   searchBar && searchBar.addEventListener("input", e => renderGames(e.target.value));
 
-  const categories = ["All Games","Horror","Puzzle","Racing","Action","Rpg","Sports","Chill","Timing","Defense","Reflex","Annoying"];
+  const categories = ["All Games","Horror","Puzzle","Racing","Action","Rpg","Sports","Chill","Timing","Defense","Reflex","Annoying","Rhythm"];
   let activeBtn = null;
 
   // ── Special tabs: Mobile / PC ──
