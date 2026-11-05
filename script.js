@@ -31,7 +31,7 @@ const games = [
   { name: "Dragon Drop",          url: "https://gcode1879-arch.github.io/Dragon-Drop/",               category: "Puzzle",   image: "https://iili.io/ni9aIhx.png" },
   { name: "Ball Attack",          url: "https://gcode1879-arch.github.io/Ball-Attack/",               category: "Action",   image: "https://iili.io/ni9azIj.png" },
   { name: "Lantern Hour",         url: "https://gcode1879-arch.github.io/Lantern-Hour/",              category: "Chill",    image: "https://iili.io/nL5vmsS.png" },
-  { name: "Firefly Jar",          url: "https://gcode1879-arch.github.io/Firefly-Jar/",               category: "Chill",    image: "https://iili.io/nL5vQef.png },
+  { name: "Firefly Jar",          url: "https://gcode1879-arch.github.io/Firefly-Jar/",               category: "Chill",    image: "https://iili.io/nL5vQef.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
