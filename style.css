@@ -1519,10 +1519,6 @@ input[type="email"]:focus { border-color: var(--gold-dim); }
   #game-viewer-main { min-height: 0 !important; }
   #game-frame-main { min-height: 0 !important; }
 
-  /* Fullscreen mode: hide chrome, iframe fills entire screen */
-  #game-viewer.ns-fullscreen-mobile #game-viewer-sidebar,
-  #game-viewer.ns-fullscreen-mobile #game-viewer-topbar { display: none !important; }
-  #game-viewer.ns-fullscreen-mobile #game-viewer-main { height: 100dvh !important; }
 
   #admin-panel { width: 100% !important; right: 0 !important; top: 54px !important; height: calc(100% - 54px) !important; }
 
@@ -2084,3 +2080,33 @@ input[type="email"]:focus { border-color: var(--gold-dim); }
   font-size: 12px; font-style: italic;
   color: var(--gold-dim); opacity: 0.65; margin-left: 2px;
 }
+
+
+/* ════════════════════════════════════════
+   GAME VIEWER FULLSCREEN — all widths/orientations
+   (previously only inside the max-width:768px query, so landscape phones
+   were wider than 768px and never got it)
+════════════════════════════════════════ */
+#game-viewer.ns-fullscreen-mobile #game-viewer-sidebar,
+#game-viewer.ns-fullscreen-mobile #game-viewer-topbar { display: none !important; }
+#game-viewer.ns-fullscreen-mobile #game-viewer-main {
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+}
+#game-viewer.ns-fullscreen-mobile #game-frame-main { height: 100% !important; }
+/* Native fullscreen on the main pane: hide the topbar there too */
+#game-viewer-main:fullscreen #game-viewer-topbar { display: none !important; }
+#game-viewer-main:-webkit-full-screen #game-viewer-topbar { display: none !important; }
+#game-viewer-main:fullscreen #viewer-fs-exit-btn { display: flex; }
+#game-viewer-main:-webkit-full-screen #viewer-fs-exit-btn { display: flex; }
+#viewer-fs-exit-btn {
+  top: max(10px, env(safe-area-inset-top, 10px));
+  right: max(10px, env(safe-area-inset-right, 10px));
+}
+
+/* Hide floating widgets (quests, leaderboard) while a game is open */
+body.ns-playing #quest-btn,
+body.ns-playing #quest-panel,
+body.ns-playing #lb-btn-float,
+body.ns-playing #lb-panel { display: none !important; }
