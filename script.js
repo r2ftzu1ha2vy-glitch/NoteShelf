@@ -743,6 +743,7 @@ function showBanPopup(ban) {
 // UI HELPER: hide/show floating buttons during game
 // =====================================
 function setGameModeUI(playing) {
+  document.body.classList.toggle("ns-playing", !!playing);
   const els = ["chat-toggle","discord-btn-wrap","dm-btn-float"];
   els.forEach(id => {
     const el = document.getElementById(id);
