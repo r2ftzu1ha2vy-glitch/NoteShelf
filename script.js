@@ -32,6 +32,9 @@ const games = [
   { name: "Ball Attack",          url: "https://gcode1879-arch.github.io/Ball-Attack/",               category: "Action",   image: "https://iili.io/ni9azIj.png" },
   { name: "Lantern Hour",         url: "https://gcode1879-arch.github.io/Lantern-Hour/",              category: "Chill",    image: "https://iili.io/nL5vmsS.png" },
   { name: "Firefly Jar",          url: "https://gcode1879-arch.github.io/Firefly-Jar/",               category: "Chill",    image: "https://iili.io/nL5vQef.png" },
+  { name: "THE BUTTON",           url: "https://gcode1879-arch.github.io/THE-BUTTON/",                category: "Horror",   image: "https://iili.io/nmMNl6v.png" },
+  { name: "Draw Wizard",          url: "https://gcode1879-arch.github.io/Draw-Wizard/",               category: "Action",   image: "https://iili.io/nmMN4te.png" },
+  { name: "All In Risk",          url: "https://gcode1879-arch.github.io/All-in-Risk/",               category: "Action",   image: "https://iili.io/nmMNrN9.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
