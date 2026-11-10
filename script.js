@@ -68,11 +68,11 @@ const freeGames = new Set([
 // =====================================
 const mobileGames = new Set([
   "Merger", "Shadow Boxing", "Highway Crash", "Tetricks", "Meme Rng",
-  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults", "Digilock, Snake Stakes, The Login Game"
+  "Pizza Panic", "Meadow Farm", "HexAsteal", "8-Ball Billiards", "Vaults", "Digilock, Snake Stakes, The Login Game", "All In Risk", "Draw Wizard", "THE BUTTON", "Clue Loot Hue", "Rap Battle", "Dragon Drop", "Ball Attack", "Lantern Hour", "Firefly Jar",
 ]);
 const desktopGames = new Set([
   "Badminton Champion", "Build N Defend Tower", "Square Dodge", "RingBound",
-  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults", "Digilock, Snake Stakes, The Login Game"
+  "Tap Tempo", "Cosmic Duel", "Star Runner", "ADventure", "Vaults", "Digilock, Snake Stakes, The Login Game", "All In Risk", "Draw Wizard", "THE BUTTON", "Clue Loot Hue", "Rap Battle", "Dragon Drop", "Ball Attack", "Lantern Hour", "Firefly Jar",
 ]);
 
 // =====================================
