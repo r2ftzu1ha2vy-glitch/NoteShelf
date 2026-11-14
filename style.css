@@ -2110,3 +2110,232 @@ body.ns-playing #quest-btn,
 body.ns-playing #quest-panel,
 body.ns-playing #lb-btn-float,
 body.ns-playing #lb-panel { display: none !important; }
+
+
+/* ════════════════════════════════════════════════════════════
+   MOBILE FIT PASS  (appended — overrides earlier mobile rules)
+   Goals: no sideways scroll, horizontal category strip, 2-col
+   game grid, tidy floating buttons, bottom-sheet panels,
+   16px inputs (no iOS zoom), 40px+ touch targets, safe areas.
+════════════════════════════════════════════════════════════ */
+html, body { max-width: 100%; overflow-x: hidden; }
+button, a, input, label { -webkit-tap-highlight-color: transparent; }
+button, .game-button, .category-button, .top-btn { touch-action: manipulation; }
+
+@media (max-width: 768px) {
+
+  /* ── Top bar: one slim full-width row, scrolls if crowded ── */
+  #top-bar {
+    height: calc(54px + env(safe-area-inset-top, 0px)) !important;
+    padding: env(safe-area-inset-top, 0px) 8px 0 8px !important;
+    gap: 6px !important;
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  #top-bar::-webkit-scrollbar { display: none; }
+  #top-buttons-auth { flex-shrink: 0; }
+  #edit-profile-btn { flex-shrink: 0; }
+  #profile { flex-shrink: 0; margin-left: auto; }
+  #user-avatar { width: 30px !important; height: 30px !important; }
+  #username-display { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px !important; }
+  .top-btn { min-height: 36px; }
+
+  /* Update Logs / Nomis: sit in normal flow under the bar instead of floating over content */
+  #top-buttons-main {
+    position: absolute !important;
+    top: calc(62px + env(safe-area-inset-top, 0px)) !important;
+    left: 12px !important; right: 12px !important;
+    display: flex; gap: 8px; z-index: 1900 !important;
+  }
+
+  /* ── Heading block ── */
+  h1 {
+    margin: 0 !important;
+    padding: calc(108px + env(safe-area-inset-top, 0px)) 12px 0 !important;
+    justify-content: flex-start;
+    font-size: clamp(16px, 5.4vw, 24px) !important;
+    letter-spacing: 2px !important;
+    flex-wrap: nowrap;
+  }
+  #noteshelf-logo { height: 64px !important; margin-right: 6px !important; flex-shrink: 0; }
+  h4 { margin: 2px 12px 8px !important; font-size: 9px !important; letter-spacing: 4px !important; }
+
+  /* ── Search: full width ── */
+  #search-wrap { display: flex !important; margin: 6px 12px 8px !important; }
+  #search-bar { width: 100% !important; max-width: none !important; font-size: 16px !important; padding: 12px 18px 12px 38px !important; }
+
+  /* ── Category sidebar -> sticky horizontal chip strip ── */
+  #category-sidebar {
+    position: sticky !important;
+    top: calc(54px + env(safe-area-inset-top, 0px)) !important;
+    left: auto !important;
+    width: 100% !important; height: auto !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 6px !important;
+    padding: 8px 10px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--ink-border);
+    border-radius: 0 !important;
+    overflow-x: auto !important; overflow-y: hidden !important;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.45) !important;
+    z-index: 1500;
+    scrollbar-width: none;
+  }
+  #category-sidebar::-webkit-scrollbar { display: none; }
+  #category-sidebar:hover { width: 100% !important; }
+  #category-sidebar > div[style*="height:1px"] { width: 1px !important; height: 24px !important; margin: 0 2px !important; align-self: center; }
+  .category-button {
+    width: auto !important; flex: 0 0 auto;
+    min-height: 38px !important;
+    padding: 6px 12px 6px 6px !important;
+    border: 1px solid var(--ink-border) !important;
+    border-radius: 30px !important;
+    background: rgba(255,215,0,0.04) !important;
+    box-shadow: none !important;
+  }
+  .category-button.active, .special-tab-button.active {
+    border-color: var(--gold) !important;
+    background: rgba(255,215,0,0.16) !important;
+    box-shadow: none !important;
+  }
+  .category-button:hover { box-shadow: none !important; }
+  .category-text { opacity: 1 !important; margin-left: 2px !important; font-size: 10px; }
+
+  /* ── Game grid: clean 2 columns that always fit ── */
+  #game-list {
+    margin: 0 !important;
+    padding: 12px 12px 120px !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px !important;
+  }
+  .game-button {
+    width: 100% !important; min-width: 0 !important; max-width: none !important;
+    height: auto !important; aspect-ratio: 148 / 172;
+  }
+  .game-button:hover { transform: none !important; }
+  .game-button:active { transform: scale(0.97) !important; }
+  .game-button > div:not(.compat-tooltip) { font-size: 11px !important; }
+  .compat-tooltip { display: none !important; }
+  /* some builds render list rows in the grid (e.g. text-only categories) */
+  #game-list > *:not(.game-button) { grid-column: 1 / -1; min-width: 0; }
+
+  /* ── Floating action buttons: one tidy column, smaller ── */
+  #chat-toggle, #dm-btn-float, #discord-btn, #quest-btn, #lb-btn-float {
+    width: 44px !important; height: 44px !important;
+    right: calc(10px + env(safe-area-inset-right, 0px)) !important;
+  }
+  #chat-toggle   { bottom: calc(12px  + env(safe-area-inset-bottom, 0px)) !important; }
+  #dm-btn-float  { bottom: calc(64px  + env(safe-area-inset-bottom, 0px)) !important; }
+  #discord-btn-wrap { right: calc(10px + env(safe-area-inset-right, 0px)) !important; bottom: calc(116px + env(safe-area-inset-bottom, 0px)) !important; }
+  #discord-btn   { position: static !important; }
+  #discord-label { display: none !important; }
+  #quest-btn     { bottom: calc(168px + env(safe-area-inset-bottom, 0px)) !important; }
+  #lb-btn-float  { bottom: calc(220px + env(safe-area-inset-bottom, 0px)) !important; }
+  #chat-toggle svg, #dm-btn-float svg { width: 20px !important; height: 20px !important; }
+  #discord-btn svg { width: 22px !important; height: 22px !important; }
+
+  /* ── Bottom-sheet panels ── */
+  #chat-panel, #dm-panel {
+    left: 0 !important; right: 0 !important; bottom: 0 !important;
+    width: 100% !important; max-width: 100% !important;
+    height: min(82dvh, 620px) !important; max-height: 82dvh !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  }
+  #quest-panel, #lb-panel {
+    left: 8px !important; right: 8px !important; bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important; max-width: none !important;
+    max-height: 78dvh !important; overflow-y: auto !important;
+  }
+  #lb-panel { left: 0 !important; right: 0 !important; bottom: 0 !important; max-height: 80dvh !important; }
+
+  /* DM: show either the friends list OR the conversation, not both stacked */
+  #dm-panel { flex-direction: column !important; }
+  #dm-sidebar { max-height: none !important; flex: 1 1 auto !important; min-height: 0; }
+  #dm-friends-list { max-height: none !important; flex: 1; }
+  #dm-no-convo { display: none !important; }
+  #dm-panel:has(#dm-convo[style*="display: flex"]) #dm-sidebar { display: none !important; }
+  #dm-panel:not(:has(#dm-convo[style*="display: flex"])) #dm-chat-area { display: none !important; }
+  #dm-close-convo { width: 34px !important; height: 34px !important; }
+  .dm-remove-btn { opacity: 1 !important; width: 28px !important; height: 28px !important; }
+
+  /* ── Chat: bigger tap targets, toolbar inside the screen ── */
+  #chat-close { width: 36px !important; height: 36px !important; }
+  .chat-bubble-group { max-width: 82% !important; }
+  .chat-toolbar {
+    top: -30px !important; transform: none !important;
+    left: auto !important; right: auto !important;
+  }
+  .chat-row.me    .chat-toolbar { right: 0 !important; }
+  .chat-row.other .chat-toolbar { left: 0 !important; }
+  .chat-bubble:focus-within .chat-toolbar { opacity: 1; pointer-events: all; }
+  .ctb-btn { width: 32px !important; height: 32px !important; }
+  .chat-actions { position: static !important; transform: none !important; opacity: 1 !important; pointer-events: all !important; padding: 2px 0 0 !important; }
+  .chat-action-btn { width: 32px !important; height: 32px !important; }
+  #chat-send, #dm-send { width: 44px !important; height: 44px !important; }
+
+  /* ── 16px inputs = no iOS focus-zoom ── */
+  input, textarea, select,
+  #chat-input, #dm-input, #dm-add-input, #auth-username, #auth-password, #auth-email,
+  #ep-email, #ep-password, #global-message-input { font-size: 16px !important; }
+
+  /* ── Modals ── */
+  #auth-popup, #edit-profile-popup {
+    width: calc(100vw - 24px) !important; min-width: 0 !important;
+    max-height: calc(100dvh - 24px); overflow-y: auto;
+    padding: 22px 16px !important; box-sizing: border-box !important;
+  }
+  #close-auth, #close-edit-profile, #close-admin { width: 36px !important; height: 36px !important; }
+  #ep-avatar-wrap { flex-wrap: wrap; }
+  input[type="email"] { width: 100%; margin-right: 0; }
+
+  /* Admin side panels fill the screen */
+  #admin-panel, #ban-admin-panel {
+    width: 100% !important; left: 0 !important; right: 0 !important;
+    top: calc(54px + env(safe-area-inset-top, 0px)) !important;
+    height: calc(100dvh - 54px - env(safe-area-inset-top, 0px)) !important;
+    border-radius: 0 !important;
+  }
+
+  /* Toasts / banners must not exceed the screen */
+  #broadcast-stack { top: calc(64px + env(safe-area-inset-top, 0px)) !important; }
+  #global-message-popup { max-width: calc(100vw - 24px); white-space: normal; text-align: center; font-size: 12px; }
+  #dm-toast, #verify-toast { max-width: calc(100vw - 24px); white-space: normal; text-align: center; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  #verify-banner { padding: 8px 12px; }
+  #verify-banner-inner { max-width: 100%; }
+  #verify-banner-left { font-size: 10px; }
+
+  /* ── Game viewer ── */
+  #game-viewer-topbar { padding-top: max(6px, env(safe-area-inset-top, 0px)) !important; height: auto !important; min-height: 44px; }
+  #game-viewer-title { font-size: 11px !important; letter-spacing: 1px !important; }
+  .viewer-btn { padding: 8px 12px !important; min-height: 36px; }
+  #game-viewer-sidebar { height: 112px !important; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #game-viewer-sidebar-header { padding: 8px 12px 6px !important; }
+
+  .bottom-container { padding-bottom: calc(36px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+
+/* ── Small phones ── */
+@media (max-width: 380px) {
+  h1 { font-size: 15px !important; letter-spacing: 1px !important; }
+  #noteshelf-logo { height: 52px !important; }
+  #game-list { gap: 8px !important; padding: 10px 8px 120px !important; }
+  .top-btn { font-size: 9px !important; padding: 6px 8px !important; }
+  .game-button > div:not(.compat-tooltip) { font-size: 10px !important; padding: 6px !important; }
+}
+
+/* ── Landscape phones: games get the whole screen ── */
+@media (max-height: 500px) and (orientation: landscape) {
+  #game-viewer { flex-direction: row !important; }
+  #game-viewer-sidebar { display: none !important; }
+  #game-viewer-topbar { min-height: 38px; padding: 4px 10px !important; }
+  #chat-panel, #dm-panel { height: 92dvh !important; max-height: 92dvh !important; }
+}
+
+/* ── Touch devices: no hover-only UI ── */
+@media (hover: none) {
+  .game-button:hover { transform: none !important; }
+  .chat-toolbar { opacity: 0; }
+  .chat-bubble:active .chat-toolbar, .chat-bubble:focus-within .chat-toolbar { opacity: 1; pointer-events: all; }
+}
