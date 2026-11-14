@@ -36,6 +36,7 @@ const games = [
   { name: "Draw Wizard",          url: "https://gcode1879-arch.github.io/Draw-Wizard/",               category: "Action",   image: "https://iili.io/nmMN4te.png" },
   { name: "All In Risk",          url: "https://gcode1879-arch.github.io/All-in-Risk/",               category: "Action",   image: "https://iili.io/nmMNrN9.png" },
   { name: "Noobie",               url: "https://r2ftzu1ha2vy-glitch.github.io/Noobie/",               category: "Horror",   image: "https://iili.io/npOtLx9.png" },
+  { name: "Dont Drop",            url: "https://r2ftzu1ha2vy-glitch.github.io/Dont-Drop/",            category: "Puzzle",   image: "https://iili.io/o9fRvmQ.png" },
 ];
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
