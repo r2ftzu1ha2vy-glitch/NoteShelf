@@ -42,6 +42,51 @@ const games = [
 
 const defaultImg = "https://iili.io/KUgv2G2.png";
 
+const NO_THUMB_TEXT = "No Thumbnail Currently :c";
+
+// DOM version: returns an <img>, or a text block when there is no usable image
+function makeThumb(game, { className = "", style = "", alt = game.name } = {}) {
+  const buildFallback = () => {
+    const d = document.createElement("div");
+    d.className = (className + " no-thumb").trim();
+    d.textContent = NO_THUMB_TEXT;
+    d.style.cssText =
+      "display:flex;align-items:center;justify-content:center;text-align:center;" +
+      "box-sizing:border-box;padding:6px;font-family:'Cinzel',serif;font-size:10px;" +
+      "line-height:1.3;color:#B8960C;background:var(--ink-mid);" +
+      "border:1px solid var(--ink-border);border-radius:8px;" +
+      style;
+    return d;
+  };
+
+  if (!game.image) return buildFallback();
+
+  const img = document.createElement("img");
+  if (className) img.className = className;
+  img.src = game.image;
+  img.alt = alt;
+  img.onerror = () => img.replaceWith(buildFallback()); // broken URL -> text too
+  return img;
+}
+
+// HTML-string version, for the template-literal spots (compact text pill)
+function thumbHTML(game, imgStyle = "") {
+  const pill =
+    `<span class="no-thumb" style="display:inline-flex;align-items:center;flex-shrink:0;` +
+    `padding:2px 6px;border-radius:6px;border:1px solid var(--ink-border);` +
+    `background:var(--ink-mid);color:#B8960C;font-family:'Cinzel',serif;` +
+    `font-size:8px;line-height:1.2;white-space:nowrap;">${NO_THUMB_TEXT}</span>`;
+  if (!game.image) return pill;
+  window.__ns_thumbFail = window.__ns_thumbFail || ((el) => {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = el.dataset.pill;
+    el.replaceWith(tmp.firstChild);
+  });
+  const safePill = pill.replace(/"/g, "&quot;");
+  return `<img src="${game.image}" alt="${game.name}" title="${game.name}" style="${imgStyle}" ` +
+         `data-pill="${safePill}" onerror="window.__ns_thumbFail(this)">`;
+}
+
 // =====================================
 // GAME AVAILABILITY (owner-controlled)
 // =====================================
@@ -895,11 +940,8 @@ function buildViewerSidebar(activeName) {
     btn.className = "sidebar-game-btn" + (g.name === activeName ? " active" : "") + (locked ? " sidebar-locked" : "") + (unavailable ? " sidebar-unavailable" : "");
     btn.style.position = "relative";
 
-    const thumb = document.createElement("img");
-    thumb.className = "sidebar-game-thumb";
-    thumb.src = g.image || defaultImg;
-    thumb.alt = g.name;
-    if (locked || unavailable) thumb.style.cssText = "filter:brightness(0.45) saturate(0.3);";
+    const thumb = makeThumb(g, { className: "sidebar-game-thumb" });
+    if (locked || unavailable) thumb.style.filter = "brightness(0.45) saturate(0.3)";
 
     const name = document.createElement("div");
     name.className = "sidebar-game-name";
@@ -1060,7 +1102,7 @@ function createGameButton(game) {
 
   const btn = document.createElement("button");
   btn.className = "game-button" + (locked ? " game-locked" : "") + (unavailable ? " game-unavailable" : "");
-  const img = document.createElement("img"); img.src = game.image || defaultImg; img.alt = game.name;
+  const img = makeThumb(game, { style: "width:100%;aspect-ratio:16/9;" });
   const label = document.createElement("div"); label.textContent = game.name;
   btn.appendChild(img); btn.appendChild(label);
 
@@ -4530,7 +4572,7 @@ document.addEventListener("ns_game_closed", () => {
       const btn = document.createElement("button");
       btn.className = "rp-card";
       btn.innerHTML = `
-        <img src="${g.image || "https://iili.io/KUgv2G2.png"}" alt="${g.name}">
+        ${thumbHTML(g)}
         <span>${g.name}</span>
       `;
       btn.onclick = () => {
@@ -4735,8 +4777,7 @@ document.addEventListener("ns_game_closed", () => {
       const recentHTML = profile.recentGames.slice(0, 3).map(name => {
         const g = games.find(x => x.name === name);
         if (!g) return "";
-        return `<img src="${g.image || "https://iili.io/KUgv2G2.png"}" alt="${name}" title="${name}"
-                     style="width:28px;height:28px;border-radius:6px;object-fit:cover;border:1px solid rgba(255,215,0,0.2);">`;
+        return thumbHTML(g, "width:28px;height:28px;border-radius:6px;object-fit:cover;border:1px solid rgba(255,215,0,0.2);");
       }).join("");
 
       const adminBadge = profile.isAdmin || profile.isBanAdmin
@@ -4763,7 +4804,7 @@ document.addEventListener("ns_game_closed", () => {
 
         ${favGame ? `
         <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(255,215,0,0.04);border:1px solid rgba(184,150,12,0.2);border-radius:8px;margin-bottom:8px;">
-          <img src="${favGame.image || "https://iili.io/KUgv2G2.png"}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;flex-shrink:0;" alt="${favGame.name}">
+          ${thumbHTML(favGame, "width:26px;height:26px;border-radius:5px;object-fit:cover;flex-shrink:0;")}
           <div>
             <div style="font-family:'Cinzel',serif;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:#B8960C;opacity:0.7;margin-bottom:2px;">Last Played</div>
             <div style="font-family:'EB Garamond',serif;font-size:13px;color:#F0E6CA;">${favGame.name}</div>
