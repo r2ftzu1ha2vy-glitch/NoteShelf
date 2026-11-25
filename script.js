@@ -3412,9 +3412,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(holder);
   }
   function coinSVG(size) {
-    ensureCoinSprite();
-    const n = size || 24;
-    return `<svg width="${n}" height="${n}" viewBox="0 0 64 64" style="display:inline-block;vertical-align:middle;" aria-label="coin"><use href="#ns-coin"/></svg>`;
+    return coinIconHTML(size || 24, "vertical-align:middle;", "coin");
   }
 
   function xpPop(x, y, amount, parent) {
@@ -4105,11 +4103,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // NOTE: the balance is stored at users/<name>/xp so balances that
 // existed before the switch carry over.
 
-// Coin icon: inline SVG that scales with the surrounding text size.
-// Coin icon: your coin.svg (project root), cropped to the coin by the viewBox so the
-// 1214x989 canvas margins don't shrink it. The gold disc underneath only shows if
-// coin.svg fails to load. Scales with the surrounding text size.
-const COIN_ICON = '<svg class="coin-svg" xmlns="http://www.w3.org/2000/svg" viewBox="305 185 622 658" width="1.1em" height="1.1em" aria-hidden="true" style="display:inline-block;vertical-align:-0.2em;flex-shrink:0;"><circle cx="616" cy="514" r="285" fill="#FACD03"/><image href="coin.svg" x="0" y="0" width="1214" height="989"/></svg>';
+// Coin icon: coin.svg (Neon Crown Coin Stack, project root, 1390x1132 canvas), cropped to the
+// stack by the viewBox so the canvas margins and VTracer edge speckles do not show. The gold disc
+// underneath is kept small enough to hide behind the stack; it only shows if coin.svg fails to load.
+const COIN_FILE = "coin.svg";
+const COIN_CANVAS = { w: 1390, h: 1132 };
+const COIN_VIEWBOX = "300 155 815 880"; // crop of the stack on the canvas, measured from the SVG paths
+function coinIconHTML(size, extraStyle, label) {
+  const dim = typeof size === "number" ? size + "px" : size;
+  return '<svg class="coin-svg" xmlns="http://www.w3.org/2000/svg" viewBox="' + COIN_VIEWBOX + '" width="' + dim + '" height="' + dim + '" ' +
+    (label ? 'aria-label="' + label + '"' : 'aria-hidden="true"') + ' style="display:inline-block;flex-shrink:0;' + extraStyle + '">' +
+    '<circle cx="708" cy="595" r="200" fill="#FACD03"/>' +
+    '<image href="' + COIN_FILE + '" x="0" y="0" width="' + COIN_CANVAS.w + '" height="' + COIN_CANVAS.h + '"/></svg>';
+}
+const COIN_ICON = coinIconHTML("1.1em", "vertical-align:-0.2em;");
 window.__ns_userCoins = 0;
 
 // Escapes text for safe use inside innerHTML templates and attribute values.
