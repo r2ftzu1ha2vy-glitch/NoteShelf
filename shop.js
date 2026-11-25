@@ -677,16 +677,9 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     balEl.lastChild.textContent = (window.__ns_userCoins || 0).toLocaleString();
   }
 
-  // Thumbnail for game previews: first game with an image; gradient shows if it fails to load.
-  function previewThumbUrl() {
-    try {
-      if (typeof games !== "undefined" && Array.isArray(games)) {
-        const g = games.find(x => x && typeof x.image === "string" && /^(https?:|data:)/i.test(x.image));
-        if (g) return g.image.replace(/["\\\n\r]/g, "");
-      }
-    } catch (e) { /* preview only */ }
-    return "";
-  }
+  // Thumbnail for game previews: the bundled no-thumbnail game card (project root).
+  const PREVIEW_THUMB = "game-card-preview.png"; // 1024x1536; title and Play button are baked into the art
+  function previewThumbUrl() { return PREVIEW_THUMB; }
 
   // px = preview size: avatar diameter, or game-button width.
   function previewNode(kind, item, px) {
@@ -715,7 +708,6 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     const art = el("div", { class: "ns-gf-art" });
     const url = previewThumbUrl();
     if (url) art.style.backgroundImage = `url("${url}"),linear-gradient(160deg,#2A2638,#141219)`;
-    art.appendChild(el("div", { class: "ns-gf-lbl", text: "Your Game" }));
     g.appendChild(art);
     return g;
   }
