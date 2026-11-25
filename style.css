@@ -184,6 +184,11 @@ h4 {
   letter-spacing: 1px;
   display: none;
 }
+/* Wrapper that carries the equipped avatar frame (an <img> cannot draw the ring pseudo-element).
+   Hidden until script.js shows the img; room (margin) is left for the ring and glow. */
+#user-avatar-wrap { display: none; border-radius: 50%; margin: 4px; flex-shrink: 0; }
+#user-avatar-wrap:has(#user-avatar[style*="inline-block"]) { display: inline-flex; }
+#user-avatar-wrap > #user-avatar { position: relative; z-index: 1; }
 #user-avatar {
   width: 34px; height: 34px;
   border-radius: 50%;
