@@ -10,6 +10,10 @@
 //   cosmetics/gameFrame     equipped game-frame id (drawn on the game thumbnail buttons)
 //
 // Frame ids from the previous shop are kept, so frames people already own stay owned.
+//
+// UI: the shop shelf shows crates only. Clicking a crate opens its detail page: buy bar
+// (with a confirm step) plus every frame in it with its per-frame drop chance. Owned frames
+// can be equipped from that page.
 // =====================================
 (function () {
   "use strict";
@@ -97,7 +101,7 @@
   ];
 
   // ── Game frames (drawn around the game thumbnail buttons) ──
-  // bg: border-ring gradient. w: ring width px. size/pos: optional background-size/position for bg.
+  // bg: border-ring gradient. w: ring width px. flat: true skips the bevel overlay (pixel-art frames). size/pos: optional background-size/position for bg.
   // anim: "slide" (needs a 300%-wide gradient that ends on its first colour) or "spin"
   //       (bg must use `conic-gradient(from var(--gf-a), …)`). dur = seconds.
   // fx*: overlay painted on the ring only — sheen sweep, twinkles, corner studs, flicker, pulse, hazard march.
@@ -126,11 +130,11 @@
     // ── Arcade Crate ──
     { id: "arcade_blue",   name: "Arcade Blue",     crate: "gf_arcade", rarity: "common",    w: 6, bg: "linear-gradient(135deg,#4DA3FF,#1B3F9C 55%,#4DA3FF)", glow: "rgba(77,163,255,.4)", ...fxStuds("#CFE8FF") },
     { id: "hazard_tape",   name: "Hazard Tape",     crate: "gf_arcade", rarity: "common",    w: 6, bg: tint("#17130B"), glow: "rgba(255,212,0,.3)", fxbg: "repeating-linear-gradient(45deg,#FFD400 0px 8px,#17130B 8px 16px)", fxanim: "Hazard", fxdur: 1.4 },
-    { id: "pixel_grass",   name: "Pixel Grass",     crate: "gf_arcade", rarity: "common",    w: 8, bg: "repeating-conic-gradient(#2E7D32 0deg 90deg,#5C3D1E 90deg 180deg)", size: "16px 16px", glow: "rgba(0,0,0,0)" },
+    { id: "pixel_grass", flat: true,   name: "Pixel Grass",     crate: "gf_arcade", rarity: "common",    w: 8, bg: "repeating-conic-gradient(#2E7D32 0deg 90deg,#5C3D1E 90deg 180deg)", size: "16px 16px", glow: "rgba(0,0,0,0)" },
     { id: "retro_console", name: "Retro Console",   crate: "gf_arcade", rarity: "uncommon",  w: 10, bg: "linear-gradient(180deg,#DDD8CB,#9A9588 50%,#DDD8CB)", glow: "rgba(0,0,0,0)", ...fxStuds("#4A463D") },
     { id: "coin_op",       name: "Coin-Op",         crate: "gf_arcade", rarity: "uncommon",  w: 7, bg: "repeating-linear-gradient(90deg,#FFD700 0px 8px,#B8860B 8px 16px)", glow: "rgba(255,215,0,.4)", ...fxSheen(3.2) },
     { id: "handheld",      name: "Handheld",        crate: "gf_arcade", rarity: "uncommon",  w: 9, bg: "linear-gradient(180deg,#9BBC0F,#306230 50%,#0F380F)", glow: "rgba(155,188,15,.3)", ...fxStuds("#0F380F") },
-    { id: "pixel_dungeon", name: "Pixel Dungeon",   crate: "gf_arcade", rarity: "rare",      w: 8, bg: "repeating-conic-gradient(#3A2A1A 0deg 90deg,#7A5A2E 90deg 180deg)", size: "16px 16px", glow: "rgba(255,140,40,.25)", ...fxFlicker("rgba(255,140,40,.5)", 1.8) },
+    { id: "pixel_dungeon", flat: true, name: "Pixel Dungeon",   crate: "gf_arcade", rarity: "rare",      w: 8, bg: "repeating-conic-gradient(#3A2A1A 0deg 90deg,#7A5A2E 90deg 180deg)", size: "16px 16px", glow: "rgba(255,140,40,.25)", ...fxFlicker("rgba(255,140,40,.5)", 1.8) },
     { id: "neon_arcade",   name: "Neon Arcade",     crate: "gf_arcade", rarity: "rare",      w: 5, bg: "linear-gradient(90deg,#00F0FF,#FF2BD6,#7B2CFF,#00F0FF)", anim: "slide", dur: 6, glow: "rgba(0,240,255,.55)", ...fxSheen(3.6) },
     { id: "high_score",    name: "High Score",      crate: "gf_arcade", rarity: "epic",      w: 6, bg: "linear-gradient(90deg,#FF004D,#FFA300,#FFEC27,#00E436,#29ADFF,#83769C,#FF004D)", anim: "slide", dur: 3.5, glow: "rgba(255,236,39,.4)", ...fxTwinkle("#FFFFFF", 1.6) },
     { id: "insert_coin",   name: "Insert Coin",     crate: "gf_arcade", rarity: "legendary", w: 7, bg: "conic-gradient(from var(--gf-a),#FFF6C2,#FFD700,#B8860B,#FFD700,#FFF6C2)", anim: "spin", dur: 4, glow: "rgba(255,215,0,.75)", ...fxSheen(2.6) },
@@ -215,6 +219,18 @@
       return present.map(r => ({ rarity: r, pct: total > 0 ? (100 * (w[r] || 0)) / total : 0 }));
     },
 
+    // Per-frame drop chance in percent: the rarity's share, split evenly across the frames of
+    // that rarity (exactly what rollItem does). The values for one crate sum to 100.
+    frameOdds(crate) {
+      const pool = framesOf(crate);
+      const odds = core.crateOdds(crate);
+      return pool.map(f => {
+        const o = odds.find(x => x.rarity === f.rarity);
+        const n = pool.filter(g => g.rarity === f.rarity).length;
+        return { item: f, rarity: f.rarity, pct: o && n ? o.pct / n : 0 };
+      });
+    },
+
     // Weighted rarity, then uniform frame inside that rarity. rng() must return [0,1).
     rollItem(crate, rng) {
       const pool = framesOf(crate);
@@ -254,6 +270,8 @@
         if (!TIERS[c.tier]) { bad.push(c.id + " has unknown tier"); continue; }
         if (pool.length < MIN_FRAMES_PER_CRATE) bad.push(c.id + " has only " + pool.length + " frames");
         for (const f of pool) if (!(TIERS[c.tier].weights[f.rarity] > 0)) bad.push(c.id + ": no odds for " + f.rarity + " (" + f.id + ")");
+        const sum = core.frameOdds(c).reduce((a, x) => a + x.pct, 0);
+        if (Math.abs(sum - 100) > 1e-6) bad.push(c.id + " frame odds sum to " + sum + ", expected 100");
       }
       return bad;
     },
@@ -350,8 +368,11 @@
   function buildCSS() {
     let css = `
 /* ── avatar frames ── */
-.ns-af { position: relative; isolation: isolate; overflow: visible !important; box-shadow: 0 0 0 1px #0D0B12, 0 0 11px 1px var(--af-glow, transparent); }
+.ns-af { position: relative; isolation: isolate; overflow: visible !important; box-shadow: 0 0 0 1px #0D0B12, 0 0 11px 1px var(--af-glow, transparent), 0 0 24px 2px color-mix(in srgb, var(--af-glow, transparent) 40%, transparent); }
 .ns-af > img { border-radius: 50%; }
+.ns-af:not(img)::after { content: ""; position: absolute; inset: calc(-1 * var(--af-w, 3px)); padding: var(--af-w, 3px); border-radius: 50%; z-index: -1; pointer-events: none;
+  background: linear-gradient(150deg, rgba(255,255,255,.6), rgba(255,255,255,0) 36%, rgba(0,0,0,0) 58%, rgba(0,0,0,.45));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
 .ns-af::before { content: ""; position: absolute; inset: calc(-1 * var(--af-w, 3px)); padding: var(--af-w, 3px); border-radius: 50%; z-index: -1; pointer-events: none; background: var(--af-ring);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
 img.ns-af { box-shadow: 0 0 0 2px var(--af-c1), 0 0 0 4px var(--af-c2), 0 0 10px var(--af-glow); }
@@ -401,6 +422,8 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
       if (f.pulse) css += `.ns-af.ns-af[data-af="${f.id}"]:not(img) { animation:nsAfGlow ${f.pulse}s ease-in-out infinite; }\n`;
     });
 
+    // Light from the top-left edge, shade at the bottom: reads as a raised, cut frame instead of a flat stroke.
+    const BEVEL = "linear-gradient(180deg,rgba(255,255,255,.24),rgba(255,255,255,0) 42%,rgba(0,0,0,.3))";
     GAME_FRAMES.forEach(f => {
       const sel  = `html[data-gfv="${f.id}"] .game-button, .ns-gf-prev[data-gfv="${f.id}"]`;
       const selB = `html[data-gfv="${f.id}"] .game-button::before, .ns-gf-prev[data-gfv="${f.id}"]::before`;
@@ -408,13 +431,18 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
       const slide = f.anim === "slide";
       const size = f.size || (slide ? "300% 100%" : "100% 100%");
       const pos  = f.pos  || (slide ? "var(--gf-p) 50%" : "0 0");
+      const fill = "linear-gradient(var(--gf-fill,#141219),var(--gf-fill,#141219)) padding-box";
+      const layers = f.flat ? [fill, `${f.bg} border-box`] : [fill, BEVEL + " border-box", `${f.bg} border-box`];
+      const sizes  = f.flat ? `100% 100%,${size}` : `100% 100%,100% 100%,${size}`;
+      const poss   = f.flat ? `0 0,${pos}` : `0 0,0 0,${pos}`;
+      const halo   = `color-mix(in srgb, ${f.glow} 45%, transparent)`;
       let base = `--gf-w:${f.w}px;border:${f.w}px solid transparent !important;`
-        + `background:linear-gradient(var(--gf-fill,#141219),var(--gf-fill,#141219)) padding-box,${f.bg} border-box !important;`
-        + `background-size:100% 100%,${size} !important;background-position:0 0,${pos} !important;`
-        + `box-shadow:0 0 14px ${f.glow} !important;`;
+        + `background:${layers.join(",")} !important;`
+        + `background-size:${sizes} !important;background-position:${poss} !important;`
+        + `box-shadow:0 0 0 1px rgba(8,6,12,.75),0 0 14px ${f.glow},0 0 32px ${halo} !important;`;
       if (f.anim) base += `animation:${slide ? "nsGfSlide" : "nsGfSpin"} ${f.dur || 6}s linear infinite${slide ? " alternate" : ""};`;
       css += `${sel} { ${base} }\n`;
-      css += `${selH} { box-shadow: 0 14px 34px rgba(0,0,0,.6), 0 0 24px ${f.glow} !important; }\n`;
+      css += `${selH} { box-shadow: 0 14px 34px rgba(0,0,0,.6), 0 0 0 1px rgba(8,6,12,.75), 0 0 26px ${f.glow}, 0 0 44px ${halo} !important; }\n`;
       const fxbg = f.fxbg || (f.fxstud ? studs(f.fxstud, f.w) : f.fxdots ? dots(f.fxdots, f.w) : "");
       if (fxbg) {
         let fx = `background:${fxbg};`;
@@ -430,7 +458,7 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
   display: none; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box; }
 #ns-shop-overlay.open { display: flex; animation: nsShopIn .22s ease; }
 @keyframes nsShopIn { from { opacity: 0; } to { opacity: 1; } }
-#ns-shop { position: relative; width: min(860px, 100%); max-height: min(90vh, 100%); display: flex; flex-direction: column;
+#ns-shop { position: relative; width: min(940px, 100%); max-height: min(90vh, 100%); display: flex; flex-direction: column;
   background: linear-gradient(160deg,#141219,#0D0B12); border: 1px solid rgba(184,150,12,.5); border-radius: 18px;
   box-shadow: 0 24px 80px rgba(0,0,0,.9); overflow: hidden; font-family: 'Cinzel', serif; color: #F0E6CA; }
 #ns-shop-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px;
@@ -450,32 +478,93 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
 #ns-shop-grid::-webkit-scrollbar { width: 4px; }
 #ns-shop-grid::-webkit-scrollbar-thumb { background: rgba(184,150,12,.4); border-radius: 2px; }
 
-.ns-crate { border: 1px solid color-mix(in srgb, var(--cr, #FFD700) 38%, transparent); border-radius: 14px; overflow: hidden;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--cr, #FFD700) 8%, #141219), #0F0D15); }
-.ns-crate-head { display: flex; align-items: center; gap: 14px; padding: 14px; flex-wrap: wrap; }
-.ns-crate-ico { flex-shrink: 0; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--cr, #FFD700) 55%, transparent)); }
-.ns-crate-info { flex: 1 1 200px; min-width: 0; }
-.ns-crate-name { font-size: 14px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--cr, #FFD700); }
-.ns-crate-blurb { font-family: 'EB Garamond', serif; font-size: 13px; color: #CFC4A6; margin: 2px 0 7px; }
-.ns-odds { display: flex; flex-wrap: wrap; gap: 5px; }
-.ns-odds span { font-size: 8px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 7px; border-radius: 10px;
-  border: 1px solid currentColor; background: rgba(0,0,0,.25); }
-.ns-crate-buy { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 130px; }
-.ns-crate-count { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #B8960C; text-align: center; }
-.ns-crate-buy .ns-shop-price { justify-content: center; }
-.ns-crate-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; padding: 0 14px 14px; }
-.ns-fc { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 8px 9px; text-align: center;
-  background: rgba(255,215,0,.02); border: 1px solid rgba(184,150,12,.18); border-radius: 10px; }
-.ns-fc.equipped { border-color: rgba(255,215,0,.7); box-shadow: 0 0 14px rgba(255,215,0,.12); }
-.ns-fc.locked .ns-shop-prev { filter: grayscale(.5) brightness(.78); opacity: .9; }
-.ns-fc.locked .ns-shop-name { opacity: .55; }
+/* ── crate shelf ── */
+.ns-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 16px; }
+.ns-cc { position: relative; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 16px 14px 14px; text-align: center; cursor: pointer;
+  font: inherit; color: inherit; border-radius: 16px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--cr, #FFD700) 34%, transparent);
+  background: radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--cr, #FFD700) 22%, transparent), transparent 64%), linear-gradient(180deg, #17141F, #0E0C14);
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.ns-cc::before { content: ""; position: absolute; left: 50%; top: 30px; width: 170px; height: 170px; margin-left: -85px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--cr, #FFD700) 42%, transparent), transparent 66%); opacity: .5; transition: opacity .25s ease, transform .25s ease; }
+.ns-cc:hover, .ns-cc:focus-visible { transform: translateY(-3px); border-color: var(--cr, #FFD700); outline: none;
+  box-shadow: 0 16px 36px rgba(0,0,0,.55), 0 0 26px color-mix(in srgb, var(--cr, #FFD700) 32%, transparent); }
+.ns-cc:hover::before, .ns-cc:focus-visible::before { opacity: 1; transform: scale(1.12); }
+.ns-cc:active { transform: translateY(-1px) scale(.99); }
+.ns-cc-art { position: relative; height: 124px; display: flex; align-items: flex-end; justify-content: center; }
+.ns-cc-pips { position: absolute; top: 0; right: 0; display: flex; gap: 3px; }
+.ns-pip { width: 7px; height: 7px; transform: rotate(45deg); background: var(--cr, #FFD700); box-shadow: 0 0 6px var(--cr, #FFD700); }
+.ns-pip.off { background: transparent; box-shadow: none; border: 1px solid color-mix(in srgb, var(--cr, #FFD700) 45%, transparent); }
+.ns-cc-name { position: relative; font-size: 13px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--cr, #FFD700); }
+.ns-cc-blurb { position: relative; font-family: 'EB Garamond', serif; font-size: 13px; line-height: 1.3; color: #CFC4A6; min-height: 34px; }
+.ns-cc-prog { position: relative; width: 100%; display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.ns-cc-prog span { font-size: 9px; letter-spacing: 1.5px; color: #B8960C; }
+.ns-cc-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.ns-cc-bar i { display: block; height: 100%; background: var(--cr, #FFD700); box-shadow: 0 0 8px var(--cr, #FFD700); }
+.ns-cc-foot { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 2px; min-height: 26px; flex-wrap: wrap; }
+.ns-cc-need { font-size: 9px; letter-spacing: 1px; color: #D98080; }
+.ns-cc-done { font-size: 10px; letter-spacing: 2px; color: var(--cr, #FFD700); }
+
+/* crate art (shared by shelf, detail and opening screen) */
+.cr-lid { transform-box: view-box; transform-origin: 16px 56px; transition: transform .34s cubic-bezier(.3,1.5,.5,1); }
+.cr-beam { opacity: 0; transition: opacity .3s ease; }
+.ns-cc:hover .cr-lid, .ns-cc:focus-visible .cr-lid { transform: rotate(-15deg); }
+.ns-cc:hover .cr-beam, .ns-cc:focus-visible .cr-beam { opacity: 1; }
+.cr-lid.up { transform: rotate(-19deg); }
+.cr-beam.up { opacity: 1; }
+.ns-sp { transform-box: fill-box; transform-origin: center; animation: nsTwinkle 2.4s ease-in-out infinite; }
+@keyframes nsTwinkle { 0%,100% { opacity: .15; transform: scale(.4); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes nsFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.ns-float { animation: nsFloat 4.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .ns-sp, .ns-float, .ns-shake { animation: none !important; } .cr-lid { transition: none; } }
+
+/* ── crate detail ── */
+.ns-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 9px; font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700; letter-spacing: 2px;
+  text-transform: uppercase; color: #B8960C; background: transparent; border: 1px solid rgba(184,150,12,.35); border-radius: 18px; cursor: pointer; }
+.ns-back:hover, .ns-back:focus-visible { color: #FFD700; border-color: #FFD700; outline: none; }
+.ns-dt { display: flex; flex-direction: column; gap: 16px; }
+.ns-dt-hero { position: relative; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; padding: 20px; border-radius: 16px; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--cr, #FFD700) 45%, transparent);
+  background: radial-gradient(90% 120% at 12% 20%, color-mix(in srgb, var(--cr, #FFD700) 24%, transparent), transparent 60%), linear-gradient(180deg, #17141F, #0E0C14); }
+.ns-dt-art { position: relative; flex: 0 0 auto; width: 172px; display: flex; justify-content: center; align-items: flex-end; margin: 0 auto; }
+.ns-dt-art::before { content: ""; position: absolute; inset: -20px -10px -10px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--cr, #FFD700) 45%, transparent), transparent 66%); pointer-events: none; }
+.ns-dt-art svg { position: relative; }
+.ns-dt-info { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.ns-dt-name { font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--cr, #FFD700); }
+.ns-dt-blurb { font-family: 'EB Garamond', serif; font-size: 15px; color: #CFC4A6; margin-top: -4px; }
+.ns-odds-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; }
+.ns-odds-bar i { display: block; min-width: 3px; }
+.ns-odds-leg { display: flex; flex-wrap: wrap; gap: 5px 12px; }
+.ns-odds-leg span { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 1px; color: #E6DCC0; }
+.ns-odds-leg span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--rc); }
+.ns-buy { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.ns-buy-price { display: inline-flex; align-items: center; gap: 6px; font-size: 18px; font-weight: 700; color: #FFD700; }
+.ns-buy-price .coin-svg { font-size: 22px; }
+.ns-buy-have { font-size: 10px; letter-spacing: 1.5px; color: #B8960C; display: inline-flex; align-items: center; gap: 5px; }
+.ns-buy-ask { font-family: 'EB Garamond', serif; font-size: 14px; color: #E6DCC0; flex-basis: 100%; }
+.ns-shop-btn.ghost { background: transparent; border-color: rgba(184,150,12,.3); color: #B8960C; }
+.ns-shop-btn.buy { background: linear-gradient(180deg, #FFE680, #E3B400); color: #1A1300; border-color: #FFD700; box-shadow: 0 0 18px rgba(255,215,0,.28); }
+.ns-shop-btn.buy:hover:not(:disabled) { background: linear-gradient(180deg, #FFF3B0, #FFD700); color: #1A1300; }
+.ns-shop-btn.buy:disabled { box-shadow: none; }
+.ns-rar-head { display: flex; align-items: center; gap: 10px; margin: 6px 2px 0; font-size: 11px; font-weight: 700; letter-spacing: 2px; color: var(--rc); }
+.ns-rar-head::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, color-mix(in srgb, var(--rc) 55%, transparent), transparent); }
+.ns-rar-head em { font-style: normal; font-weight: 400; letter-spacing: 1px; color: #B8A97E; }
+.ns-fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.ns-fc { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px 10px; text-align: center; border-radius: 12px;
+  background: radial-gradient(100% 70% at 50% 0%, color-mix(in srgb, var(--rc, #888) 14%, transparent), transparent 70%), rgba(255,255,255,.02);
+  border: 1px solid color-mix(in srgb, var(--rc, #888) 32%, transparent); }
+.ns-fc.equipped { border-color: #FFD700; box-shadow: 0 0 16px rgba(255,215,0,.16); }
+.ns-fc.locked .ns-shop-prev { filter: grayscale(.45) brightness(.8); }
+.ns-fc.locked .ns-shop-name { opacity: .7; }
+.ns-fc-pct { font-size: 13px; font-weight: 700; color: var(--rc); letter-spacing: .5px; }
+.ns-fc-pct small { font-size: 9px; font-weight: 400; color: #B8A97E; letter-spacing: 1px; }
+.ns-fc-tag { position: absolute; top: 6px; right: 6px; font-size: 8px; letter-spacing: 1.5px; color: #5FD08A; }
 .ns-shop-prev { min-height: 76px; display: flex; align-items: center; justify-content: center; width: 100%; }
 .ns-shop-av { width: 52px; height: 52px; border-radius: 50%; background: #1C1924; display: flex; align-items: center; justify-content: center;
   font-size: 20px; font-weight: 700; color: #B8960C; flex-shrink: 0; }
 .ns-shop-av img { width: 100%; height: 100%; object-fit: cover; }
 .ns-shop-name { font-size: 10.5px; font-weight: 700; letter-spacing: 1px; color: #F0E6CA; }
 .ns-shop-rarity { font-size: 8px; letter-spacing: 2px; text-transform: uppercase; }
-.ns-shop-price { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: #FFD700; }
+.ns-shop-price { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; line-height: 1.5; color: #FFD700; }
 .ns-shop-price .coin-svg { font-size: 15px; }
 .ns-shop-btn { width: 100%; padding: 7px 0; font-family: 'Cinzel', serif; font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
   border-radius: 8px; border: 1px solid rgba(184,150,12,.55); background: rgba(255,215,0,.08); color: #FFD700; cursor: pointer; }
@@ -509,6 +598,12 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
 .ns-reveal { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; animation: nsPop .5s cubic-bezier(.2,1.4,.4,1); }
 @keyframes nsPop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .ns-reveal-prev { padding: 26px 30px; border-radius: 18px; background: radial-gradient(circle, color-mix(in srgb, var(--rc) 28%, transparent), transparent 70%); }
+.ns-reveal.hi .ns-reveal-prev { position: relative; isolation: isolate; }
+.ns-reveal.hi .ns-reveal-prev::before { content: ""; position: absolute; inset: -46px; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--rc) 55%, transparent) 0deg 6deg, transparent 6deg 24deg);
+  -webkit-mask: radial-gradient(circle, #000 18%, transparent 68%); mask: radial-gradient(circle, #000 18%, transparent 68%); animation: nsAfSpin 14s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ns-reveal.hi .ns-reveal-prev::before { animation: none; } }
+.ns-shake .cr-beam { opacity: .9; }
 .ns-reveal-name { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: #F0E6CA; }
 .ns-reveal-rar { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; }
 .ns-reveal-note { font-family: 'EB Garamond', serif; font-size: 15px; color: #CFC4A6; min-height: 20px; display: inline-flex; align-items: center; gap: 6px; }
@@ -520,7 +615,7 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
   // ───────────────────────────────────
   // STATE + FRAME RENDERING
   // ───────────────────────────────────
-  const state = { owned: {}, avatarFrame: null, gameFrame: null, busy: false, tab: "avatar", open: false };
+  const state = { owned: {}, avatarFrame: null, gameFrame: null, busy: false, tab: "avatar", open: false, detail: null, confirm: false };
   let cosRef = null;
   let xpRef = null;
   let openCtx = null; // set while the crate-opening screen is up
@@ -627,13 +722,75 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const reduceMotion = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-  function crateSVG(accent, px) {
-    return `<svg width="${px}" height="${px}" viewBox="0 0 64 64" fill="none" stroke-linejoin="round" aria-hidden="true">`
-      + `<path d="M8 26h48v28a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3z" fill="#1C1510" stroke="${accent}" stroke-width="2.5"/>`
-      + `<path d="M6 16a3 3 0 0 1 3-3h46a3 3 0 0 1 3 3v10H6z" fill="${accent}" fill-opacity=".28" stroke="${accent}" stroke-width="2.5"/>`
-      + `<path d="M20 26v31M44 26v31" stroke="${accent}" stroke-opacity=".55" stroke-width="2.5"/>`
-      + `<rect x="27" y="22" width="10" height="12" rx="2" fill="#FFD700" stroke="#7A5A00" stroke-width="1.6"/>`
-      + `<circle cx="32" cy="28" r="1.8" fill="#3A2A00"/></svg>`;
+  // Crate art: one chest drawn per tier (iron-bound wood, glowing steel, gold-trimmed obsidian),
+  // tinted by the crate's accent. Ids are unique per instance so many SVGs can share the page.
+  let svgUid = 0;
+  const TIER_LOOK = {
+    1: { top: "#7A4F28", bot: "#35200F", line: "#1A0E06", b0: "#C9CED8", b1: "#5E636E", trim: "#9AA0AB" },
+    2: { top: "#3F4858", bot: "#12161D", line: "#080B10", b0: null,      b1: null,      trim: null },
+    3: { top: "#33235C", bot: "#0C0720", line: "#05030C", b0: "#FFF0A8", b1: "#B8860B", trim: "#FFD700" },
+  };
+  const SPARKS = [[18, 22, 0], [102, 30, .7], [92, 8, 1.4], [30, 10, 2]];
+
+  function crateSVG(crate, px, opts) {
+    const o = opts || {};
+    const id = "cr" + (++svgUid), A = crate.accent, L = TIER_LOOK[crate.tier] || TIER_LOOK[1];
+    const b0 = L.b0 || A, b1 = L.b1 || A, band = `url(#${id}b)`, h = Math.round(px * 112 / 120);
+    const stops = (a, b, extra) => `<stop offset="0" stop-color="${a}"${extra || ""}/><stop offset="1" stop-color="${b}"${extra || ""}/>`;
+    const bandStops = L.b0 ? stops(b0, b1) : `<stop offset="0" stop-color="${A}"/><stop offset="1" stop-color="${A}" stop-opacity=".45"/>`;
+    const rivet = (x, y) => `<circle cx="${x}" cy="${y}" r="1.5" fill="#0006"/><circle cx="${x - .3}" cy="${y - .4}" r="1" fill="#FFF" fill-opacity=".55"/>`;
+    const bodyPath = "M17 56H103L100 98Q100 101 97 101H23Q20 101 20 98Z";
+    const lidPath = "M13 58C13 30 32 17 60 17C88 17 107 30 107 58Z";
+
+    let body = `<rect x="14" y="54" width="92" height="50" fill="url(#${id}w)"/>`
+      + [68, 80, 91].map(y => `<path d="M14 ${y}H106" stroke="${L.line}" stroke-opacity=".55" stroke-width="1"/>`).join("")
+      + `<rect x="29" y="54" width="12" height="50" fill="${band}"/><rect x="79" y="54" width="12" height="50" fill="${band}"/>`
+      + `<rect x="29" y="54" width="12" height="50" fill="none" stroke="#000" stroke-opacity=".35"/><rect x="79" y="54" width="12" height="50" fill="none" stroke="#000" stroke-opacity=".35"/>`
+      + `<rect x="14" y="94" width="92" height="8" fill="${band}"/><path d="M14 94H106" stroke="#000" stroke-opacity=".4"/>`
+      + [64, 76, 87].map(y => rivet(35, y) + rivet(85, y)).join("");
+    if (crate.tier === 2) {
+      body += `<g stroke="${A}" stroke-width="1.3" fill="none" stroke-linecap="round" filter="url(#${id}f)"><path d="M46 93V82H52V72"/><path d="M74 93V82H68V72"/><path d="M46 62V70"/><path d="M74 62V70"/></g>`
+        + `<g stroke="#fff" stroke-opacity=".8" stroke-width=".5" fill="none"><path d="M46 93V82H52V72"/><path d="M74 93V82H68V72"/></g>`;
+    }
+    if (crate.tier === 3) {
+      body += `<path d="M60 84L64 90L60 96L56 90Z" fill="${A}" stroke="${b0}" stroke-width="1"/>`
+        + `<path d="M18 60H26M94 60H102" stroke="${b0}" stroke-width="1.2"/><path d="M22 96L26 92M98 96L94 92" stroke="${b0}" stroke-width="1.2"/>`;
+    }
+    const lock = crate.tier === 3
+      ? `<path d="M60 56L68 66L60 78L52 66Z" fill="${A}" stroke="${b0}" stroke-width="1.6"/><path d="M60 56L68 66H52Z" fill="#fff" fill-opacity=".45"/><path d="M60 66V78" stroke="#fff" stroke-opacity=".3"/>`
+      : `<rect x="50" y="54" width="20" height="22" rx="3.5" fill="url(#${id}g)" stroke="#5A4000" stroke-width="1.4"/>`
+        + `<circle cx="60" cy="63" r="3.3" fill="#1A0F00"/><path d="M58.6 63H61.4L62.2 70H57.8Z" fill="#1A0F00"/><path d="M52.5 56.5H67.5" stroke="#fff" stroke-opacity=".55" stroke-width="1"/>`;
+    const lid = `<g class="cr-lid${o.open ? " up" : ""}"><g clip-path="url(#${id}l)">`
+      + `<rect x="10" y="14" width="100" height="48" fill="url(#${id}t)"/>`
+      + `<path d="M14 44C20 30 40 24 60 24C80 24 100 30 106 44" fill="none" stroke="${L.line}" stroke-opacity=".5"/>`
+      + `<path d="M13 52C14 36 32 28 60 28C88 28 106 36 107 52" fill="none" stroke="${L.line}" stroke-opacity=".4"/>`
+      + `<rect x="29" y="14" width="12" height="48" fill="${band}"/><rect x="79" y="14" width="12" height="48" fill="${band}"/>`
+      + `<rect x="29" y="14" width="12" height="48" fill="none" stroke="#000" stroke-opacity=".35"/><rect x="79" y="14" width="12" height="48" fill="none" stroke="#000" stroke-opacity=".35"/>`
+      + `<rect x="10" y="52" width="100" height="7" fill="${band}"/><path d="M10 52H110" stroke="#000" stroke-opacity=".4"/>`
+      + rivet(35, 47) + rivet(85, 47)
+      + `</g><path d="${lidPath}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="1.6"/>`
+      + `<path d="M17 50C18 36 34 22 60 21" fill="none" stroke="#fff" stroke-opacity=".38" stroke-width="2" stroke-linecap="round"/>`
+      + (crate.tier === 3 ? `<path d="M60 22L66 30L60 38L54 30Z" fill="${A}" stroke="${b0}" stroke-width="1.2"/><path d="M60 22L66 30H54Z" fill="#fff" fill-opacity=".5"/>` : "")
+      + `<rect x="54" y="46" width="12" height="13" rx="2" fill="url(#${id}g)" stroke="#5A4000" stroke-width="1.2"/></g>`;
+    const sparks = crate.tier >= 2 ? SPARKS.slice(0, crate.tier === 2 ? 2 : 4).map(([x, y, d]) =>
+      `<g transform="translate(${x} ${y})"><path class="ns-sp" style="animation-delay:${d}s" d="M0-4L1-1L4 0L1 1L0 4L-1 1L-4 0L-1-1Z" fill="#fff"/></g>`).join("") : "";
+
+    return `<svg width="${px}" height="${h}" viewBox="0 0 120 112" fill="none" stroke-linejoin="round" aria-hidden="true">`
+      + `<defs>`
+      + `<linearGradient id="${id}w" x1="0" y1="0" x2="0" y2="1">${stops(L.top, L.bot)}</linearGradient>`
+      + `<linearGradient id="${id}t" x1="0" y1="0" x2="0" y2="1">${stops(L.top, L.bot)}</linearGradient>`
+      + `<linearGradient id="${id}b" x1="0" y1="0" x2="1" y2="0">${bandStops}</linearGradient>`
+      + `<linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1">${stops("#FFE680", "#B8860B")}</linearGradient>`
+      + `<linearGradient id="${id}m" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="${A}" stop-opacity=".9"/><stop offset="1" stop-color="${A}" stop-opacity="0"/></linearGradient>`
+      + `<filter id="${id}f" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.6"/></filter>`
+      + `<clipPath id="${id}c"><path d="${bodyPath}"/></clipPath><clipPath id="${id}l"><path d="${lidPath}"/></clipPath>`
+      + `</defs>`
+      + `<ellipse cx="60" cy="104" rx="46" ry="5" fill="#000" fill-opacity=".5"/>`
+      + `<g clip-path="url(#${id}c)">${body}</g><path d="${bodyPath}" fill="none" stroke="#000" stroke-opacity=".6" stroke-width="1.6"/>`
+      + lock
+      + `<g class="cr-beam${o.open ? " up" : ""}"><path d="M20 57L100 57L118 -2L2 -2Z" fill="url(#${id}m)"/></g>`
+      + `<rect x="15" y="54" width="90" height="4" fill="${A}" fill-opacity=".9" filter="url(#${id}f)"/><rect x="19" y="55.4" width="82" height="1.3" fill="#fff" fill-opacity=".8"/>`
+      + lid + sparks + `</svg>`;
   }
 
   function buildModal() {
@@ -653,22 +810,26 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     tabEls = {};
     Object.keys(KINDS).forEach(kind => {
       const b = el("button", { class: "ns-shop-tab", text: KINDS[kind].tab });
-      b.onclick = () => { if (openCtx) return; state.tab = kind; render(); };
+      b.onclick = () => { if (openCtx) return; state.tab = kind; state.detail = null; state.confirm = false; render(); gridEl.scrollTop = 0; };
       tabEls[kind] = b;
       tabs.appendChild(b);
     });
+    const mine = el("button", { class: "ns-shop-tab", text: "My Frames" });
+    mine.onclick = () => { if (openCtx) return; state.tab = "owned"; state.detail = null; state.confirm = false; render(); gridEl.scrollTop = 0; };
+    tabEls.owned = mine;
+    tabs.appendChild(mine);
     modal.appendChild(tabs);
 
     gridEl = el("div", { id: "ns-shop-grid" });
     modal.appendChild(gridEl);
-    footEl = el("div", { id: "ns-shop-foot", text: "Frames are cosmetic. Odds are shown on every crate; a duplicate refunds part of the price. Avatar frames show in chat, game frames on your game buttons." });
+    footEl = el("div", { id: "ns-shop-foot", text: "Pick a crate to see every frame inside and its drop chance. Frames are cosmetic; a duplicate refunds part of the price. Avatar frames show in chat, game frames on your game buttons." });
     modal.appendChild(footEl);
 
     openEl = el("div", { id: "ns-open" });
     modal.appendChild(openEl);
 
     overlay.appendChild(modal);
-    overlay.addEventListener("click", e => { if (e.target === overlay) closeShop(); });
+    overlay.addEventListener("click", e => { if (e.target !== overlay) return; if (!openCtx) { state.detail = null; state.confirm = false; } closeShop(); });
     document.body.appendChild(overlay);
   }
 
@@ -722,61 +883,168 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     return wrap;
   }
 
-  function frameCard(kind, item) {
+  const fmtPct = (p) => (p >= 10 ? Math.round(p * 10) / 10 : Math.round(p * 100) / 100) + "%";
+  const pluralFrames = (n) => n + (n === 1 ? " frame" : " frames");
+
+  function crateCard(crate) {
+    const frames = framesOf(crate);
+    const ownedN = frames.filter(f => state.owned[f.id]).length;
+    const price = priceOf(crate), bal = window.__ns_userCoins || 0;
+    const card = el("button", { class: "ns-cc", type: "button",
+      "aria-label": crate.name + ", " + price + " coins, " + ownedN + " of " + frames.length + " frames collected" });
+    card.style.setProperty("--cr", crate.accent);
+
+    const art = el("div", { class: "ns-cc-art" }, [el("div", { class: "ns-float", html: crateSVG(crate, 118) })]);
+    const pips = el("div", { class: "ns-cc-pips", title: "Tier " + crate.tier });
+    for (let i = 1; i <= 3; i++) pips.appendChild(el("i", { class: "ns-pip" + (i <= crate.tier ? "" : " off") }));
+    art.appendChild(pips);
+    card.appendChild(art);
+    card.appendChild(el("div", { class: "ns-cc-name", text: crate.name }));
+    card.appendChild(el("div", { class: "ns-cc-blurb", text: crate.blurb }));
+
+    const bar = el("div", { class: "ns-cc-bar" }, [el("i")]);
+    bar.firstChild.style.width = (frames.length ? (100 * ownedN) / frames.length : 0) + "%";
+    card.appendChild(el("div", { class: "ns-cc-prog" }, [el("span", { text: ownedN + " / " + pluralFrames(frames.length) + " collected" }), bar]));
+
+    const foot = el("div", { class: "ns-cc-foot" });
+    if (ownedN >= frames.length) foot.appendChild(el("span", { class: "ns-cc-done", text: "Collection complete" }));
+    else {
+      foot.appendChild(el("div", { class: "ns-shop-price", html: COIN_ICON + "<span>" + price.toLocaleString() + "</span>" }));
+      if (bal < price) foot.appendChild(el("span", { class: "ns-cc-need", text: "Need " + (price - bal).toLocaleString() + " more" }));
+    }
+    card.appendChild(foot);
+    card.onclick = () => showDetail(crate.id);
+    return card;
+  }
+
+  function oddsBar(crate) {
+    const odds = core.crateOdds(crate).filter(o => o.pct > 0);
+    const bar = el("div", { class: "ns-odds-bar", role: "img", "aria-label": "Drop chance by rarity" });
+    const leg = el("div", { class: "ns-odds-leg" });
+    odds.forEach(o => {
+      const seg = el("i", { title: RARITY[o.rarity].label + " " + fmtPct(o.pct) });
+      seg.style.flex = String(o.pct);
+      seg.style.background = RARITY[o.rarity].color;
+      bar.appendChild(seg);
+      const chip = el("span", { text: RARITY[o.rarity].label + " " + fmtPct(o.pct) });
+      chip.style.setProperty("--rc", RARITY[o.rarity].color);
+      leg.appendChild(chip);
+    });
+    return [bar, leg];
+  }
+
+  function buyRow(crate) {
+    const frames = framesOf(crate), price = priceOf(crate), bal = window.__ns_userCoins || 0;
+    const complete = frames.every(f => state.owned[f.id]);
+    const row = el("div", { class: "ns-buy" });
+    row.appendChild(el("div", { class: "ns-buy-price", html: COIN_ICON + "<span>" + price.toLocaleString() + "</span>" }));
+    row.appendChild(el("div", { class: "ns-buy-have", html: "You have " + COIN_ICON + "<span></span>" }));
+    row.lastChild.lastChild.textContent = bal.toLocaleString();
+    const btn = el("button", { class: "ns-shop-btn big buy", type: "button" });
+    if (complete)        { btn.textContent = "Collection complete"; btn.disabled = true; row.appendChild(btn); }
+    else if (bal < price){ btn.textContent = "Need " + (price - bal).toLocaleString() + " more"; btn.disabled = true; row.appendChild(btn); }
+    else if (!state.confirm) {
+      btn.textContent = "Buy crate";
+      btn.disabled = state.busy;
+      btn.onclick = () => { state.confirm = true; render(); };
+      row.appendChild(btn);
+    } else {
+      row.appendChild(el("div", { class: "ns-buy-ask", text: "Spend " + price.toLocaleString() + " coins to open one " + crate.name + "? You get one random frame; a duplicate refunds part of the price." }));
+      btn.textContent = "Confirm and open";
+      btn.disabled = state.busy;
+      btn.onclick = () => doOpenCrate(crate);
+      const no = el("button", { class: "ns-shop-btn big ghost", type: "button", text: "Cancel" });
+      no.onclick = () => { state.confirm = false; render(); };
+      row.appendChild(btn); row.appendChild(no);
+    }
+    return row;
+  }
+
+  function frameCard(kind, item, pct) {
     const k = KINDS[kind];
     const owned = !!state.owned[item.id];
     const equipped = state[k.field] === item.id;
-    const card = el("div", { class: "ns-fc" + (equipped ? " equipped" : "") + (owned ? "" : " locked") });
-    card.appendChild(el("div", { class: "ns-shop-prev" }, [previewNode(kind, item)]));
-    card.appendChild(el("div", { class: "ns-shop-name", text: item.name }));
     const r = RARITY[item.rarity];
-    const rar = el("div", { class: "ns-shop-rarity", text: r.label });
-    rar.style.color = r.color;
-    card.appendChild(rar);
-    const btn = el("button", { class: "ns-shop-btn" });
+    const card = el("div", { class: "ns-fc" + (equipped ? " equipped" : "") + (owned ? "" : " locked") });
+    card.style.setProperty("--rc", r.color);
+    if (owned && pct != null) card.appendChild(el("div", { class: "ns-fc-tag", text: "OWNED" }));
+    card.appendChild(el("div", { class: "ns-shop-prev" }, [previewNode(kind, item, kind === "avatar" ? 58 : 88)]));
+    card.appendChild(el("div", { class: "ns-shop-name", text: item.name }));
+    card.appendChild(el("div", { class: "ns-shop-rarity", text: r.label, style: "color:" + r.color }));
+    if (pct == null) {
+      card.appendChild(el("div", { class: "ns-fc-pct", html: "<small></small>" }));
+      card.lastChild.firstChild.textContent = (crateOf(item) || {}).name || "";
+    } else {
+      card.appendChild(el("div", { class: "ns-fc-pct", html: "<span></span> <small>chance</small>" }));
+      card.lastChild.firstChild.textContent = fmtPct(pct);
+    }
+    const btn = el("button", { class: "ns-shop-btn", type: "button" });
     if (owned) {
       btn.textContent = equipped ? "Equipped ✓" : "Equip";
       if (equipped) btn.classList.add("on");
       btn.onclick = () => doEquip(kind, equipped ? null : item.id);
-    } else {
-      btn.textContent = "Locked";
-      btn.disabled = true;
-    }
+    } else { btn.textContent = "Not owned"; btn.disabled = true; }
     if (state.busy) btn.disabled = true;
     card.appendChild(btn);
     return card;
   }
 
-  function crateSection(crate) {
-    const frames = framesOf(crate);
-    const ownedN = frames.filter(f => state.owned[f.id]).length;
-    const price = priceOf(crate);
-    const sec = el("div", { class: "ns-crate" });
-    sec.style.setProperty("--cr", crate.accent);
+  function detailView(crate) {
+    const wrap = el("div", { class: "ns-dt" });
+    wrap.style.setProperty("--cr", crate.accent);
+    const back = el("button", { class: "ns-back", type: "button", text: "‹ All crates" });
+    back.onclick = () => { if (openCtx) return; state.detail = null; state.confirm = false; render(); gridEl.scrollTop = 0; };
+    wrap.appendChild(back);
 
-    const ico = el("div", { class: "ns-crate-ico", html: crateSVG(crate.accent, 64) });
-    const info = el("div", { class: "ns-crate-info" }, [
-      el("div", { class: "ns-crate-name", text: crate.name }),
-      el("div", { class: "ns-crate-blurb", text: crate.blurb }),
-      oddsChips(crate),
+    const [bar, leg] = oddsBar(crate);
+    const info = el("div", { class: "ns-dt-info" }, [
+      el("div", { class: "ns-dt-name", text: crate.name }),
+      el("div", { class: "ns-dt-blurb", text: crate.blurb }),
+      bar, leg, buyRow(crate),
     ]);
+    const art = el("div", { class: "ns-dt-art" }, [el("div", { class: "ns-float", html: crateSVG(crate, 172, { open: true }) })]);
+    wrap.appendChild(el("div", { class: "ns-dt-hero" }, [art, info]));
 
-    const buy = el("div", { class: "ns-crate-buy" });
-    buy.appendChild(el("div", { class: "ns-crate-count", text: ownedN + " / " + frames.length + " collected" }));
-    buy.appendChild(el("div", { class: "ns-shop-price", html: COIN_ICON + "<span>" + price.toLocaleString() + "</span>" }));
-    const btn = el("button", { class: "ns-shop-btn" });
-    const bal = window.__ns_userCoins || 0;
-    if (ownedN >= frames.length) { btn.textContent = "Complete ✓"; btn.disabled = true; }
-    else if (bal < price)        { btn.textContent = "Need " + (price - bal).toLocaleString() + " more"; btn.disabled = true; }
-    else                         { btn.textContent = "Open Crate"; btn.onclick = () => doOpenCrate(crate); }
-    if (state.busy) btn.disabled = true;
-    buy.appendChild(btn);
+    // One compact grid, rarest first; each card carries its own rarity and drop chance.
+    const rank = (r) => RARITY_ORDER.indexOf(r);
+    const odds = core.frameOdds(crate).slice().sort((x, y) => rank(y.rarity) - rank(x.rarity));
+    wrap.appendChild(el("div", { class: "ns-rar-head", html: "<span></span><em></em>", style: "--rc:#FFD700" }));
+    wrap.lastChild.firstChild.textContent = "Inside this crate";
+    wrap.lastChild.lastChild.textContent = pluralFrames(odds.length) + " · one random frame per crate";
+    const grid = el("div", { class: "ns-fgrid" });
+    odds.forEach(x => grid.appendChild(frameCard(crate.kind, x.item, x.pct)));
+    wrap.appendChild(grid);
+    return wrap;
+  }
 
-    sec.appendChild(el("div", { class: "ns-crate-head" }, [ico, info, buy]));
-    const grid = el("div", { class: "ns-crate-grid" });
-    frames.forEach(f => grid.appendChild(frameCard(crate.kind, f)));
-    sec.appendChild(grid);
-    return sec;
+  function ownedView() {
+    const wrap = el("div", { class: "ns-dt" });
+    let total = 0;
+    Object.keys(KINDS).forEach(kind => {
+      const k = KINDS[kind];
+      const mineItems = k.items.filter(f => state.owned[f.id])
+        .sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity));
+      total += mineItems.length;
+      const head = el("div", { class: "ns-rar-head", html: "<span></span><em></em>", style: "--rc:#FFD700" });
+      head.firstChild.textContent = kind === "avatar" ? "Avatar frames" : "Game frames";
+      head.lastChild.textContent = mineItems.length + " / " + k.items.length + " owned" + (state[k.field] ? "" : " · none equipped");
+      wrap.appendChild(head);
+      if (!mineItems.length) {
+        wrap.appendChild(el("div", { class: "ns-dt-blurb", text: "Nothing here yet. Open a crate to get your first one." }));
+        return;
+      }
+      const grid = el("div", { class: "ns-fgrid" });
+      mineItems.forEach(f => grid.appendChild(frameCard(kind, f, null)));
+      wrap.appendChild(grid);
+    });
+    return wrap;
+  }
+
+  function showDetail(id) {
+    if (openCtx || !findCrate(id)) return;
+    state.detail = id; state.confirm = false;
+    render();
+    gridEl.scrollTop = 0;
   }
 
   function render() {
@@ -785,7 +1053,15 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     Object.keys(tabEls).forEach(k => tabEls[k].classList.toggle("active", k === state.tab));
     const top = gridEl.scrollTop;
     gridEl.textContent = "";
-    cratesOf(state.tab).forEach(c => gridEl.appendChild(crateSection(c)));
+    const crate = state.detail ? findCrate(state.detail) : null;
+    if (state.tab === "owned") { state.detail = null; gridEl.appendChild(ownedView()); }
+    else if (crate) gridEl.appendChild(detailView(crate));
+    else {
+      state.detail = null;
+      const shelf = el("div", { class: "ns-shelf" });
+      cratesOf(state.tab).forEach(c => shelf.appendChild(crateCard(c)));
+      gridEl.appendChild(shelf);
+    }
     gridEl.scrollTop = top;
   }
 
@@ -796,7 +1072,7 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     openEl.style.setProperty("--cr", crate.accent);
     const title = el("div", { id: "ns-open-title", text: "Opening " + crate.name });
     const stage = el("div", { id: "ns-open-stage" });
-    const box = el("div", { class: "ns-shake", html: crateSVG(crate.accent, 132) });
+    const box = el("div", { class: "ns-shake", html: crateSVG(crate, 150) });
     stage.appendChild(box);
     const btns = el("div", { id: "ns-open-btns" });
     openEl.appendChild(title); openEl.appendChild(stage); openEl.appendChild(btns);
@@ -883,6 +1159,7 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
 
     const box = el("div", { class: "ns-reveal" });
     box.style.setProperty("--rc", r.color);
+    if (item.rarity === "epic" || item.rarity === "legendary") box.classList.add("hi");
     const prev = el("div", { class: "ns-reveal-prev" }, [previewNode(kind, item, kind === "avatar" ? 96 : 132)]);
     const name = el("div", { class: "ns-reveal-name", text: item.name });
     const rar = el("div", { class: "ns-reveal-rar", text: r.label });
@@ -917,7 +1194,7 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
     const complete = framesOf(crate).every(f => state.owned[f.id]);
     if (complete) { again.textContent = "Crate complete ✓"; again.disabled = true; }
     else if (bal < price) { again.textContent = "Need " + (price - bal).toLocaleString() + " more"; again.disabled = true; }
-    else { again.textContent = "Open Another"; again.onclick = () => { hideOpen(); doOpenCrate(crate); }; }
+    else { again.textContent = "Buy another"; again.onclick = () => { hideOpen(); doOpenCrate(crate); }; }
     ctx.btns.appendChild(again);
 
     const done = el("button", { class: "ns-shop-btn big", text: "Done" });
@@ -928,6 +1205,7 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
   async function doOpenCrate(crate) {
     if (state.busy || openCtx) return;
     const user = me();
+    state.confirm = false;
     state.busy = true;
     render();
     showOpen(crate);
@@ -978,9 +1256,11 @@ html[data-gfv] .game-button img, html[data-gfv] .game-button .no-thumb, html[dat
   }
   function closeShop(force) {
     if (openCtx && !force) { if (openCtx.skip) openCtx.skip(); else if (openCtx.done) { hideOpen(); render(); } return; }
+    if (state.detail && !force) { state.detail = null; state.confirm = false; render(); if (gridEl) gridEl.scrollTop = 0; return; }
     hideOpen();
     state.open = false;
     state.busy = false;
+    state.detail = null; state.confirm = false;
     detachBalance();
     if (overlay) overlay.classList.remove("open");
   }
